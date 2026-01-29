@@ -1,8 +1,10 @@
+import NoteItem from './NoteItem'
+
 function NotesList() {
   return (
     <section>
       <h2>Notes</h2>
-      <p>No notes yet.</p>
+      <NoteItem />
     </section>
   )
 }
