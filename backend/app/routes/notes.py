@@ -31,3 +31,13 @@ def update_note(note_id: int, updated_note: Note):
             return updated_note
 
     raise HTTPException(status_code=404, detail="Note not found")
+
+
+@router.delete("/{note_id}")
+def delete_note(note_id: int):
+    for index, note in enumerate(notes_db):
+        if note.id == note_id:
+            notes_db.pop(index)
+            return {"deleted": note_id}
+
+    raise HTTPException(status_code=404, detail="Note not found")
