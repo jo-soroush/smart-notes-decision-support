@@ -1,7 +1,11 @@
+
 from typing import List
 
+from app.db import get_db
+from app.models.note import NoteModel
 from app.schemas.note import Note
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -11,33 +15,54 @@ notes_db: List[Note] = [
 ]
 
 
-@router.get("", response_model=List[Note])
-def get_notes():
-    return notes_db
+@router.get("", response_model=list[Note])
+def get_notes(db: Session = Depends(get_db)):
+    notes = db.query(NoteModel).all()
+    return notes
+
 
 
 @router.post("", response_model=Note)
-def create_note(note: Note):
-    notes_db.append(note)
-    return note
+def create_note(note: Note, db: Session = Depends(get_db)):
+    db_note = NoteModel(
+        title=note.title,
+        content=note.content,
+        status=note.status
+    )
+    db.add(db_note)
+    db.commit()
+    db.refresh(db_note)
+    return db_note
+
 
 
 @router.put("/{note_id}", response_model=Note)
-def update_note(note_id: int, updated_note: Note):
-    for index, note in enumerate(notes_db):
-        if note.id == note_id:
-            updated_note.id = note_id
-            notes_db[index] = updated_note
-            return updated_note
+def update_note(note_id: int, updated_note: Note, db: Session = Depends(get_db)):
+    db_note = db.query(NoteModel).filter(NoteModel.id == note_id).first()
+    if db_note is None:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    db_note.title = updated_note.title
+    db_note.content = updated_note.content
+    db_note.status = updated_note.status
+
+    db.commit()
+    db.refresh(db_note)
+    return db_note
+
 
     raise HTTPException(status_code=404, detail="Note not found")
 
 
 @router.delete("/{note_id}")
-def delete_note(note_id: int):
-    for index, note in enumerate(notes_db):
-        if note.id == note_id:
-            notes_db.pop(index)
-            return {"deleted": note_id}
+def delete_note(note_id: int, db: Session = Depends(get_db)):
+    db_note = db.query(NoteModel).filter(NoteModel.id == note_id).first()
+    if db_note is None:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    db.delete(db_note)
+    db.commit()
+    return {"deleted": note_id}
+
 
     raise HTTPException(status_code=404, detail="Note not found")
