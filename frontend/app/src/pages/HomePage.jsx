@@ -1,13 +1,30 @@
-import NotesList from '../components/NotesList'
+import { useEffect, useState } from "react";
+import NotesList from "../components/NotesList";
 
 function HomePage() {
-  return (
-    <div>
-      <h2>Home</h2>
-      <p>This is the Smart Notes home page.</p>
-      <NotesList />
-    </div>
-  )
+  const [notes, setNotes] = useState([]);
+
+  useEffect(() => {
+    async function loadNotes() {
+      try {
+        const res = await fetch("http://127.0.0.1:8000/notes");
+        const data = await res.json();
+        setNotes(data);
+      } catch (err) {
+        console.error("Failed to load notes:", err);
+      }
+    }
+
+    loadNotes();
+  }, []);
+
+return (
+  <div>
+    <NotesList notes={notes} />
+  </div>
+);
+
+
 }
 
-export default HomePage
+export default HomePage;
