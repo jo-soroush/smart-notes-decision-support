@@ -4,7 +4,7 @@ import NotesList from "../components/NotesList";
 function HomePage() {
   const [notes, setNotes] = useState([]);
 
-  // temporary form state (for testing POST)
+  // temporary form state (for POST)
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
 
@@ -43,20 +43,28 @@ function HomePage() {
         return;
       }
 
-      // clear form
+      const created = await res.json();
+
       setTitle("");
       setContent("");
 
-      // refresh list from DB
-      await loadNotes();
+      // update UI without reload
+      setNotes((prev) => [created, ...prev]);
     } catch (err) {
       console.error("Failed to create note:", err);
     }
   }
 
+  function handleDeleteInUI(deletedId) {
+    setNotes((prev) => prev.filter((n) => n.id !== deletedId));
+  }
+
+  function handleUpdateInUI(updatedNote) {
+    setNotes((prev) => prev.map((n) => (n.id === updatedNote.id ? updatedNote : n)));
+  }
+
   return (
     <div>
-      {/* TEMP: Create form for POST test */}
       <form onSubmit={handleCreate} style={{ marginBottom: "1rem" }}>
         <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
           <input
@@ -80,7 +88,11 @@ function HomePage() {
         />
       </form>
 
-      <NotesList notes={notes} />
+      <NotesList
+        notes={notes}
+        onDelete={handleDeleteInUI}
+        onUpdate={handleUpdateInUI}
+      />
     </div>
   );
 }

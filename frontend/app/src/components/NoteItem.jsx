@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-function NoteItem({ note }) {
+function NoteItem({ note, onDelete, onUpdate }) {
   const [isEditing, setIsEditing] = useState(false);
 
   const [title, setTitle] = useState(note.title);
@@ -19,7 +19,8 @@ function NoteItem({ note }) {
         return;
       }
 
-      window.location.reload();
+      // update UI without reload
+      if (onDelete) onDelete(note.id);
     } catch (err) {
       console.error("Failed to delete note:", err);
     }
@@ -31,7 +32,7 @@ function NoteItem({ note }) {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: note.id, // backend uses path id, but schema expects id
+          id: note.id,
           title: title.trim(),
           content: content.trim(),
           status,
@@ -44,8 +45,12 @@ function NoteItem({ note }) {
         return;
       }
 
+      const updated = await res.json();
+
       setIsEditing(false);
-      window.location.reload();
+
+      // update UI without reload
+      if (onUpdate) onUpdate(updated);
     } catch (err) {
       console.error("Failed to update note:", err);
     }
@@ -76,7 +81,12 @@ function NoteItem({ note }) {
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            style={{ width: "100%", padding: "0.5rem", minHeight: "90px", marginBottom: "0.5rem" }}
+            style={{
+              width: "100%",
+              padding: "0.5rem",
+              minHeight: "90px",
+              marginBottom: "0.5rem",
+            }}
             placeholder="Content"
           />
 
