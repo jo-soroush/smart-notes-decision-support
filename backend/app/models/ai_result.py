@@ -23,4 +23,5 @@ class AiResult(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    note = relationship("Note", back_populates="ai_results")
+    note = relationship("NoteModel", back_populates="ai_results")
+

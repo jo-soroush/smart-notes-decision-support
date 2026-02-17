@@ -1,10 +1,10 @@
-
+from app.routes.ai import router as ai_router
 from app.routes.notes import router as notes_router
-from app.schemas.note import Note
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Smart Notes API", version="0.1.0")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -16,11 +16,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 app.include_router(notes_router)
+app.include_router(ai_router)
 
 
 @app.get("/health", response_model=dict)
 def health_check():
     return {"status": "ok"}
-
