@@ -1,6 +1,11 @@
+from typing import TYPE_CHECKING, List
+
 from app.models.base import Base
 from sqlalchemy import Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+if TYPE_CHECKING:
+    from app.models.ai_result import AiResult
 
 
 class NoteModel(Base):
@@ -10,3 +15,9 @@ class NoteModel(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    # Relationship to AI results
+    ai_results: Mapped[List["AiResult"]] = relationship(
+        back_populates="note",
+        cascade="all, delete-orphan"
+    )

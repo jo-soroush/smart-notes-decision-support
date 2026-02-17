@@ -1,6 +1,7 @@
 from logging.config import fileConfig
 
 from alembic import context
+from app.models.ai_result import AiResult
 from app.models.base import Base
 from app.models.note import NoteModel
 from sqlalchemy import engine_from_config, pool
