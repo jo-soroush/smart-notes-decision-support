@@ -1,15 +1,22 @@
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-# backend/.env
+# backend/.env  (this file is backend/app/main.py)
 ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
-load_dotenv(ENV_PATH)
+
+# Load env file explicitly
+load_dotenv(dotenv_path=ENV_PATH, override=True)
+
+# Hard-fail early if the key is not loaded (prevents hidden 500 later)
+if not os.getenv("GEMINI_API_KEY"):
+    raise RuntimeError(f"GEMINI_API_KEY not loaded. Expected .env at: {ENV_PATH}")
 
 from app.routes.ai import router as ai_router
 from app.routes.notes import router as notes_router
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Smart Notes API", version="0.1.0")
 
