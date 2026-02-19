@@ -1,3 +1,11 @@
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# backend/.env
+ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
+load_dotenv(ENV_PATH)
+
 from app.routes.ai import router as ai_router
 from app.routes.notes import router as notes_router
 from fastapi import FastAPI

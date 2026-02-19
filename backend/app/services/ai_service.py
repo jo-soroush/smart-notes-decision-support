@@ -2,6 +2,7 @@ import hashlib
 
 from app.models.ai_result import AiResult
 from app.models.note import NoteModel
+from app.services.gemini_client import MODEL_NAME, call_gemini
 from sqlalchemy.orm import Session
 
 
@@ -49,3 +50,28 @@ def create_result(
 def build_input_text(note: NoteModel) -> str:
     """Build the text sent to the AI model based on note fields."""
     return f"Title: {note.title}\n\nContent:\n{note.content}"
+
+
+def generate_with_gemini(action_type: str, input_text: str) -> tuple[str, str]:
+    """
+    Generate AI output using Gemini. Returns (result_text, model_name).
+    """
+    if action_type == "summary":
+        prompt = (
+            "Summarize the following note in a concise way. "
+            "Return a short summary in 3-6 sentences.\n\n"
+            f"{input_text}"
+        )
+    elif action_type == "key_points":
+        prompt = (
+            "Extract 5-8 key points from the following note. "
+            "Return bullet points.\n\n"
+            f"{input_text}"
+        )
+    else:
+        raise ValueError("Invalid action type")
+
+    result = call_gemini(prompt)
+    return result.strip(), MODEL_NAME
+
+

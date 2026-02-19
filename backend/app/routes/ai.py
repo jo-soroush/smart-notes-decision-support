@@ -5,6 +5,7 @@ from app.services.ai_service import (
     build_input_text,
     compute_content_hash,
     create_result,
+    generate_with_gemini,
     get_cached_result,
 )
 from fastapi import APIRouter, Depends, HTTPException
@@ -34,14 +35,12 @@ def run_ai_job(job: AiJobCreate, db: Session = Depends(get_db)):
             created_at=cached.created_at,
         )
 
-    # 2️⃣ Placeholder AI logic (temporary until Gemini integration)
+    # 2️⃣ Generate with Gemini (sync)
     input_text = build_input_text(note)
 
-    if job.action_type == "summary":
-        result_text = f"Summary (mock): {input_text[:150]}..."
-    elif job.action_type == "key_points":
-        result_text = f"Key points (mock): {input_text[:150]}..."
-    else:
+    try:
+        result_text, model_name = generate_with_gemini(job.action_type, input_text)
+    except ValueError:
         raise HTTPException(status_code=400, detail="Invalid action type")
 
     # 3️⃣ Save new result
@@ -51,7 +50,7 @@ def run_ai_job(job: AiJobCreate, db: Session = Depends(get_db)):
         action_type=job.action_type,
         content_hash=content_hash,
         result_text=result_text,
-        model_name="mock-model",
+        model_name=model_name,
     )
 
     return AiJobResponse(
