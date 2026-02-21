@@ -24,10 +24,13 @@ a:hover {
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
+
+  /* Layout: keep app content top-aligned (no vertical centering) */
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
 }
 
 h1 {
