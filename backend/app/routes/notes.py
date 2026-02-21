@@ -41,7 +41,14 @@ def get_notes(
     total = query.count()
 
     offset = (page - 1) * limit
-    items = query.offset(offset).limit(limit).all()
+
+    # Stable ordering is required for reliable pagination (newest first).
+    items = (
+        query.order_by(NoteModel.id.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
     pages = math.ceil(total / limit) if total > 0 else 0
 
@@ -59,7 +66,7 @@ def create_note(note: NoteCreate, db: Session = Depends(get_db)):
     db_note = NoteModel(
         title=note.title,
         content=note.content,
-        status=note.status
+        status=note.status,
     )
     db.add(db_note)
     db.commit()
