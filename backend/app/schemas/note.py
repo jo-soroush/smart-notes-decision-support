@@ -5,6 +5,7 @@ class NoteCreate(BaseModel):
     title: str
     content: str
     status: str
+    folder_id: int | None = None
 
 
 class Note(BaseModel):
@@ -12,6 +13,7 @@ class Note(BaseModel):
     title: str
     content: str
     status: str
+    folder_id: int | None = None
 
     model_config = {"from_attributes": True}
 
