@@ -10,9 +10,8 @@ from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
-# In-memory storage (temporary, no database)  # (unused, kept as legacy)
 notes_db: List[Note] = [
-    Note(id=1, title="First note", content="Hello from backend", status="draft")
+    Note(id=1, title="First note", content="Hello from backend", status="draft", folder_id=None)
 ]
 
 
@@ -21,6 +20,7 @@ def get_notes(
     db: Session = Depends(get_db),
     search: str | None = Query(default=None),
     status: str | None = Query(default=None),
+    folder_id: int | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=10, ge=1, le=100),
 ):
@@ -28,6 +28,9 @@ def get_notes(
 
     if status:
         query = query.filter(NoteModel.status == status)
+
+    if folder_id is not None:
+        query = query.filter(NoteModel.folder_id == folder_id)
 
     if search:
         like = f"%{search}%"
@@ -42,7 +45,6 @@ def get_notes(
 
     offset = (page - 1) * limit
 
-    # Stable ordering is required for reliable pagination (newest first).
     items = (
         query.order_by(NoteModel.id.desc())
         .offset(offset)
@@ -67,6 +69,7 @@ def create_note(note: NoteCreate, db: Session = Depends(get_db)):
         title=note.title,
         content=note.content,
         status=note.status,
+        folder_id=note.folder_id,
     )
     db.add(db_note)
     db.commit()
@@ -83,6 +86,7 @@ def update_note(note_id: int, updated_note: NoteCreate, db: Session = Depends(ge
     db_note.title = updated_note.title
     db_note.content = updated_note.content
     db_note.status = updated_note.status
+    db_note.folder_id = updated_note.folder_id
 
     db.commit()
     db.refresh(db_note)
