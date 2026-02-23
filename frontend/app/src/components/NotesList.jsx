@@ -1,6 +1,6 @@
 import NoteItem from "./NoteItem";
 
-function NotesList({ notes, onDelete, onUpdate }) {
+function NotesList({ notes, folders, onDelete, onUpdate }) {
   return (
     <div>
       {(!notes || notes.length === 0) && <p>No notes yet.</p>}
@@ -10,6 +10,7 @@ function NotesList({ notes, onDelete, onUpdate }) {
           <NoteItem
             key={note.id}
             note={note}
+            folders={folders}
             onDelete={onDelete}
             onUpdate={onUpdate}
           />

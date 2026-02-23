@@ -4,6 +4,11 @@ import NotesList from "../components/NotesList";
 function HomePage() {
   const [notes, setNotes] = useState([]);
 
+  // Folders
+  const [folders, setFolders] = useState([]);
+  const [folderFilterId, setFolderFilterId] = useState(""); // "" means all
+  const [createFolderId, setCreateFolderId] = useState(""); // "" means no folder
+
   // Pagination state
   const [page, setPage] = useState(1);
   const [limit] = useState(10);
@@ -14,8 +19,6 @@ function HomePage() {
 
   // Live search state
   const [search, setSearch] = useState("");
-
-  // Debounced value (used for API calls)
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
   // Keep reference to abort ongoing request
@@ -24,6 +27,21 @@ function HomePage() {
   // temporary form state (for POST)
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+
+  async function loadFolders() {
+    try {
+      const res = await fetch("http://127.0.0.1:8000/folders");
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("Failed to load folders:", res.status, text);
+        return;
+      }
+      const data = await res.json();
+      setFolders(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to load folders:", err);
+    }
+  }
 
   // Debounce search input
   useEffect(() => {
@@ -34,13 +52,12 @@ function HomePage() {
     return () => clearTimeout(t);
   }, [search]);
 
-  // Reset to first page when search changes (debounced)
+  // Reset to first page when search or folder filter changes
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch]);
+  }, [debouncedSearch, folderFilterId]);
 
   async function loadNotes() {
-    // Abort previous request if still running
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -50,40 +67,57 @@ function HomePage() {
       params.set("page", String(page));
       params.set("limit", String(limit));
       if (debouncedSearch) params.set("search", debouncedSearch);
+      if (folderFilterId) params.set("folder_id", folderFilterId);
 
       const res = await fetch(`http://127.0.0.1:8000/notes?${params.toString()}`, {
         signal: controller.signal,
       });
 
-      const data = await res.json();
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("Failed to load notes:", res.status, text);
+        return;
+      }
 
-      setNotes(data.items);
-      setPages(data.pages);
-      setTotal(data.total);
+      const data = await res.json();
+      setNotes(data.items ?? []);
+      setPages(data.pages ?? 0);
+      setTotal(data.total ?? 0);
     } catch (err) {
-      // Ignore abort errors (expected during fast typing)
       if (err?.name === "AbortError") return;
       console.error("Failed to load notes:", err);
     }
   }
 
   useEffect(() => {
+    loadFolders();
+  }, []);
+
+  useEffect(() => {
     loadNotes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, limit, debouncedSearch]);
+  }, [page, limit, debouncedSearch, folderFilterId]);
 
   async function handleCreate(e) {
     e.preventDefault();
+
+    const payload = {
+      title: title.trim(),
+      content: content.trim(),
+      status: "draft",
+    };
+
+    if (createFolderId) {
+      payload.folder_id = Number(createFolderId);
+    } else {
+      payload.folder_id = null;
+    }
 
     try {
       const res = await fetch("http://127.0.0.1:8000/notes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: title.trim(),
-          content: content.trim(),
-          status: "draft",
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -96,11 +130,19 @@ function HomePage() {
 
       setTitle("");
       setContent("");
+      setCreateFolderId("");
 
-      // If user is viewing the newest-first list (no search) and on page 1, show it immediately.
-      if (page === 1 && !debouncedSearch) {
+      const createdFolderId = created?.folder_id ?? null;
+      const filterFolderIdNum = folderFilterId ? Number(folderFilterId) : null;
+
+      const passesFolderFilter =
+        !folderFilterId || createdFolderId === filterFolderIdNum;
+
+      if (page === 1 && !debouncedSearch && passesFolderFilter) {
         setNotes((prev) => [created, ...prev]);
         setTotal((t) => t + 1);
+      } else {
+        loadNotes();
       }
     } catch (err) {
       console.error("Failed to create note:", err);
@@ -113,9 +155,7 @@ function HomePage() {
   }
 
   function handleUpdateInUI(updatedNote) {
-    setNotes((prev) =>
-      prev.map((n) => (n.id === updatedNote.id ? updatedNote : n))
-    );
+    setNotes((prev) => prev.map((n) => (n.id === updatedNote.id ? updatedNote : n)));
   }
 
   const canPrev = page > 1;
@@ -152,16 +192,44 @@ function HomePage() {
           style={{ width: "100%", padding: "0.5rem", minHeight: "90px" }}
           required
         />
+
+        <div style={{ marginTop: "0.5rem" }}>
+          <select
+            value={createFolderId}
+            onChange={(e) => setCreateFolderId(e.target.value)}
+            style={{ padding: "0.5rem", width: "100%" }}
+          >
+            <option value="">No folder</option>
+            {folders.map((f) => (
+              <option key={f.id} value={String(f.id)}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        </div>
       </form>
 
-      {/* Live Search */}
       <div style={{ marginBottom: "1rem" }}>
+        <select
+          value={folderFilterId}
+          onChange={(e) => setFolderFilterId(e.target.value)}
+          style={{ padding: "0.5rem", width: "100%", marginBottom: "0.5rem" }}
+        >
+          <option value="">All folders</option>
+          {folders.map((f) => (
+            <option key={f.id} value={String(f.id)}>
+              {f.name}
+            </option>
+          ))}
+        </select>
+
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search notes..."
           style={{ width: "100%", padding: "0.5rem" }}
         />
+
         <div style={{ marginTop: "0.35rem", opacity: 0.7, fontSize: "0.9rem" }}>
           {debouncedSearch ? (
             <>
@@ -170,10 +238,18 @@ function HomePage() {
           ) : (
             "Showing all notes"
           )}
+          {folderFilterId ? (
+            <>
+              {" "}
+              in folder{" "}
+              <strong>
+                {folders.find((f) => String(f.id) === folderFilterId)?.name ?? folderFilterId}
+              </strong>
+            </>
+          ) : null}
         </div>
       </div>
 
-      {/* Pagination UI */}
       <div
         style={{
           display: "flex",
@@ -188,7 +264,12 @@ function HomePage() {
         </button>
 
         <div>
-          Page <strong>{page}</strong> {pages ? <>of <strong>{pages}</strong></> : null}
+          Page <strong>{page}</strong>{" "}
+          {pages ? (
+            <>
+              of <strong>{pages}</strong>
+            </>
+          ) : null}
           <span style={{ marginLeft: "0.75rem", opacity: 0.8 }}>
             Total: {total}
           </span>
@@ -199,7 +280,12 @@ function HomePage() {
         </button>
       </div>
 
-      <NotesList notes={notes} onDelete={handleDeleteInUI} onUpdate={handleUpdateInUI} />
+      <NotesList
+  notes={notes}
+  folders={folders}
+  onDelete={handleDeleteInUI}
+  onUpdate={handleUpdateInUI}
+/>
     </div>
   );
 }
