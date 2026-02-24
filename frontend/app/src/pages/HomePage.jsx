@@ -1,16 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import NotesList from "../components/NotesList";
+import NoteItem from "../components/NoteItem";
+import AiPanel from "../components/AiPanel";
+
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
 
 function HomePage() {
   const [notes, setNotes] = useState([]);
 
   // Folders
   const [folders, setFolders] = useState([]);
-  const [folderFilterId, setFolderFilterId] = useState(""); // "" means all
-  const [createFolderId, setCreateFolderId] = useState(""); // "" means no folder
-
-  // Folder manager UI state
+  const [folderFilterId, setFolderFilterId] = useState("");
   const [newFolderName, setNewFolderName] = useState("");
+
+  // Folder menu + rename UI
+  const [openFolderMenuId, setOpenFolderMenuId] = useState(null);
   const [renamingFolderId, setRenamingFolderId] = useState(null);
   const [renameValue, setRenameValue] = useState("");
 
@@ -26,19 +32,74 @@ function HomePage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  // Keep reference to abort ongoing request
+  // Selected note
+  const [selectedId, setSelectedId] = useState(null);
+
+  // Abort ongoing request
   const abortRef = useRef(null);
 
-  // temporary form state (for POST)
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
+  // ---- Resizable AI Panel ----
+  const rootRef = useRef(null);
+  const isResizingRef = useRef(false);
+
+  // width in px for AI panel
+  const [aiWidth, setAiWidth] = useState(() => {
+    const saved = Number(localStorage.getItem("aiPanelWidth") || 360);
+    return clamp(saved || 360, 280, 620);
+  });
+
+  useEffect(() => {
+    localStorage.setItem("aiPanelWidth", String(aiWidth));
+  }, [aiWidth]);
+
+  function startResize(e) {
+    e.preventDefault();
+    isResizingRef.current = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }
+
+  useEffect(() => {
+    function onMove(e) {
+      if (!isResizingRef.current) return;
+      const root = rootRef.current;
+      if (!root) return;
+
+      const rect = root.getBoundingClientRect();
+      const x = e.clientX;
+
+      // Sidebar fixed width:
+      const sidebarW = 320;
+
+      // AI panel width = distance from right edge
+      const newWidth = rect.right - x;
+
+      // Clamp to nice limits
+      setAiWidth(clamp(newWidth, 280, 620));
+    }
+
+    function onUp() {
+      if (!isResizingRef.current) return;
+      isResizingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
+
+  // ----------------------------
 
   async function loadFolders() {
     try {
       const res = await fetch("http://127.0.0.1:8000/folders");
       if (!res.ok) {
-        const text = await res.text();
-        console.error("Failed to load folders:", res.status, text);
+        console.error("Failed to load folders:", res.status, await res.text());
         return;
       }
       const data = await res.json();
@@ -48,16 +109,11 @@ function HomePage() {
     }
   }
 
-  // Debounce search input
   useEffect(() => {
-    const t = setTimeout(() => {
-      setDebouncedSearch(search.trim());
-    }, 400);
-
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 400);
     return () => clearTimeout(t);
   }, [search]);
 
-  // Reset to first page when search or folder filter changes
   useEffect(() => {
     setPage(1);
   }, [debouncedSearch, folderFilterId]);
@@ -79,15 +135,25 @@ function HomePage() {
       });
 
       if (!res.ok) {
-        const text = await res.text();
-        console.error("Failed to load notes:", res.status, text);
+        console.error("Failed to load notes:", res.status, await res.text());
         return;
       }
 
       const data = await res.json();
-      setNotes(data.items ?? []);
+      const items = data.items ?? [];
+      setNotes(items);
       setPages(data.pages ?? 0);
       setTotal(data.total ?? 0);
+
+      if (items.length > 0) {
+        setSelectedId((prev) => {
+          if (!prev) return items[0].id;
+          const stillExists = items.some((n) => n.id === prev);
+          return stillExists ? prev : items[0].id;
+        });
+      } else {
+        setSelectedId(null);
+      }
     } catch (err) {
       if (err?.name === "AbortError") return;
       console.error("Failed to load notes:", err);
@@ -103,14 +169,14 @@ function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, debouncedSearch, folderFilterId]);
 
-  async function handleCreate(e) {
-    e.preventDefault();
+  const selectedNote = notes.find((n) => n.id === selectedId) ?? null;
 
+  async function handleNewNote() {
     const payload = {
-      title: title.trim(),
-      content: content.trim(),
+      title: "Untitled",
+      content: "",
       status: "draft",
-      folder_id: createFolderId ? Number(createFolderId) : null,
+      folder_id: folderFilterId ? Number(folderFilterId) : null,
     };
 
     try {
@@ -121,36 +187,31 @@ function HomePage() {
       });
 
       if (!res.ok) {
-        const text = await res.text();
-        console.error("POST failed:", res.status, text);
+        console.error("POST failed:", res.status, await res.text());
         return;
       }
 
       const created = await res.json();
 
-      setTitle("");
-      setContent("");
-      setCreateFolderId("");
-
-      const createdFolderId = created?.folder_id ?? null;
-      const filterFolderIdNum = folderFilterId ? Number(folderFilterId) : null;
-
-      const passesFolderFilter = !folderFilterId || createdFolderId === filterFolderIdNum;
-
-      if (page === 1 && !debouncedSearch && passesFolderFilter) {
+      if (page === 1 && !debouncedSearch) {
         setNotes((prev) => [created, ...prev]);
         setTotal((t) => t + 1);
+        setSelectedId(created.id);
       } else {
-        loadNotes();
+        setSearch("");
+        setDebouncedSearch("");
+        setPage(1);
+        setSelectedId(created.id);
       }
-    } catch (err) {
-      console.error("Failed to create note:", err);
+    } catch (e) {
+      console.error("Failed to create note:", e);
     }
   }
 
   function handleDeleteInUI(deletedId) {
     setNotes((prev) => prev.filter((n) => n.id !== deletedId));
     setTotal((t) => Math.max(0, t - 1));
+    setSelectedId((prev) => (prev === deletedId ? null : prev));
   }
 
   function handleUpdateInUI(updatedNote) {
@@ -180,17 +241,16 @@ function HomePage() {
         body: JSON.stringify({ name }),
       });
 
-     if (res.status === 409) {
-  alert("A folder with this name already exists.");
-  return;
-}
+      if (res.status === 409) {
+        alert("A folder with this name already exists.");
+        return;
+      }
 
-if (!res.ok) {
-  const text = await res.text();
-  console.error("Create folder failed:", res.status, text);
-  alert("Failed to create folder.");
-  return;
-}
+      if (!res.ok) {
+        console.error("Create folder failed:", res.status, await res.text());
+        alert("Failed to create folder.");
+        return;
+      }
 
       const created = await res.json();
       setNewFolderName("");
@@ -203,6 +263,7 @@ if (!res.ok) {
   function startRename(folder) {
     setRenamingFolderId(folder.id);
     setRenameValue(folder.name);
+    setOpenFolderMenuId(null);
   }
 
   function cancelRename() {
@@ -222,18 +283,12 @@ if (!res.ok) {
       });
 
       if (!res.ok) {
-        const text = await res.text();
-        console.error("Rename folder failed:", res.status, text);
+        console.error("Rename folder failed:", res.status, await res.text());
         return;
       }
 
       const updated = await res.json();
       setFolders((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
-
-      if (folderFilterId && Number(folderFilterId) === updated.id) {
-        // nothing else needed, UI label will update via folders state
-      }
-
       cancelRename();
     } catch (err) {
       console.error("Failed to rename folder:", err);
@@ -242,8 +297,7 @@ if (!res.ok) {
 
   async function handleDeleteFolder(folderId) {
     const folderName = folders.find((f) => f.id === folderId)?.name ?? String(folderId);
-
-    const ok = window.confirm(`Delete folder "${folderName}"? Notes will keep existing but their folder becomes empty.`);
+    const ok = window.confirm(`Delete folder "${folderName}"?\nNotes will keep existing but their folder becomes empty.`);
     if (!ok) return;
 
     try {
@@ -252,138 +306,64 @@ if (!res.ok) {
       });
 
       if (!res.ok) {
-        const text = await res.text();
-        console.error("Delete folder failed:", res.status, text);
+        console.error("Delete folder failed:", res.status, await res.text());
         return;
       }
 
       setFolders((prev) => prev.filter((f) => f.id !== folderId));
+      if (folderFilterId && Number(folderFilterId) === folderId) setFolderFilterId("");
+      setOpenFolderMenuId(null);
 
-      if (folderFilterId && Number(folderFilterId) === folderId) {
-        setFolderFilterId("");
-      }
-
-      if (createFolderId && Number(createFolderId) === folderId) {
-        setCreateFolderId("");
-      }
-
-      // Notes currently on screen might have folder_id removed -> safest refresh
       loadNotes();
     } catch (err) {
       console.error("Failed to delete folder:", err);
     }
   }
 
-  return (
-    <div>
-      <form onSubmit={handleCreate} style={{ marginBottom: "1rem" }}>
-        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Title"
-            style={{ flex: 1, padding: "0.5rem" }}
-            required
-          />
-          <button type="submit" style={{ padding: "0.5rem 1rem" }}>
-            Create (POST)
-          </button>
-        </div>
+  // close folder menu on outside click
+  useEffect(() => {
+    function onDocMouseDown() {
+      if (openFolderMenuId !== null) setOpenFolderMenuId(null);
+    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [openFolderMenuId]);
 
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="Content"
-          style={{ width: "100%", padding: "0.5rem", minHeight: "90px" }}
-          required
+  return (
+    <div ref={rootRef} style={{ height: "100%", display: "flex", minHeight: 0 }}>
+      {/* SIDEBAR */}
+      <div
+        style={{
+          width: 320,
+          borderRight: "1px solid rgba(255,255,255,0.08)",
+          padding: 12,
+          overflow: "auto",
+          background: "rgba(0,0,0,0.35)",
+        }}
+      >
+        <button
+          onClick={handleNewNote}
+          style={{
+            width: "100%",
+            padding: "10px 12px",
+            marginBottom: 10,
+            borderRadius: 10,
+          }}
+        >
+          + New page
+        </button>
+
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search…"
+          style={{ width: "100%", padding: "10px 12px", marginBottom: 10, borderRadius: 10 }}
         />
 
-        <div style={{ marginTop: "0.5rem" }}>
-          <select
-            value={createFolderId}
-            onChange={(e) => setCreateFolderId(e.target.value)}
-            style={{ padding: "0.5rem", width: "100%" }}
-          >
-            <option value="">No folder</option>
-            {folders.map((f) => (
-              <option key={f.id} value={String(f.id)}>
-                {f.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </form>
-
-      {/* Folder Manager */}
-      <div style={{ border: "1px solid #444", padding: "0.75rem", marginBottom: "1rem" }}>
-        <h3 style={{ marginTop: 0 }}>Folders</h3>
-
-        <form onSubmit={handleCreateFolder} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem" }}>
-          <input
-            value={newFolderName}
-            onChange={(e) => setNewFolderName(e.target.value)}
-            placeholder="New folder name..."
-            style={{ flex: 1, padding: "0.5rem" }}
-          />
-          <button type="submit">Add</button>
-        </form>
-
-        {folders.length === 0 ? (
-          <p style={{ margin: 0, opacity: 0.8 }}>No folders yet.</p>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            {folders.map((f) => (
-              <div
-                key={f.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "0.5rem",
-                  border: "1px solid #333",
-                  padding: "0.5rem",
-                }}
-              >
-                {renamingFolderId === f.id ? (
-                  <>
-                    <input
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      style={{ flex: 1, padding: "0.4rem" }}
-                      placeholder="Folder name"
-                    />
-                    <button type="button" onClick={() => submitRename(f.id)}>
-                      Save
-                    </button>
-                    <button type="button" onClick={cancelRename}>
-                      Cancel
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <div style={{ flex: 1 }}>
-                      <strong>{f.name}</strong> <span style={{ opacity: 0.7 }}>#{f.id}</span>
-                    </div>
-                    <button type="button" onClick={() => startRename(f)}>
-                      Rename
-                    </button>
-                    <button type="button" onClick={() => handleDeleteFolder(f.id)}>
-                      Delete
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Filters */}
-      <div style={{ marginBottom: "1rem" }}>
         <select
           value={folderFilterId}
           onChange={(e) => setFolderFilterId(e.target.value)}
-          style={{ padding: "0.5rem", width: "100%", marginBottom: "0.5rem" }}
+          style={{ width: "100%", padding: "10px 12px", marginBottom: 10, borderRadius: 10 }}
         >
           <option value="">All folders</option>
           {folders.map((f) => (
@@ -393,68 +373,228 @@ if (!res.ok) {
           ))}
         </select>
 
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search notes..."
-          style={{ width: "100%", padding: "0.5rem" }}
-        />
+        <form onSubmit={handleCreateFolder} style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <input
+            value={newFolderName}
+            onChange={(e) => setNewFolderName(e.target.value)}
+            placeholder="New folder…"
+            style={{ flex: 1, padding: "10px 12px", borderRadius: 10 }}
+          />
+          <button type="submit" style={{ padding: "10px 12px", borderRadius: 10 }}>
+            Add
+          </button>
+        </form>
 
-        <div style={{ marginTop: "0.35rem", opacity: 0.7, fontSize: "0.9rem" }}>
+        {/* Folder list */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontWeight: 800, marginBottom: 8, opacity: 0.9, fontSize: 13 }}>Folders</div>
+
+          {folders.length === 0 ? (
+            <div style={{ fontSize: 13, opacity: 0.7 }}>No folders yet.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {folders.map((f) => {
+                const isFiltered = folderFilterId && Number(folderFilterId) === f.id;
+                const menuOpen = openFolderMenuId === f.id;
+                const isRenaming = renamingFolderId === f.id;
+
+                return (
+                  <div
+                    key={f.id}
+                    style={{
+                      position: "relative",
+                      border: isFiltered ? "1px solid rgba(255,255,255,0.16)" : "1px solid rgba(255,255,255,0.08)",
+                      background: isFiltered ? "rgba(255,255,255,0.05)" : "transparent",
+                      borderRadius: 10,
+                      padding: "8px 10px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    {isRenaming ? (
+                      <>
+                        <input
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          style={{ flex: 1, padding: "8px 10px", borderRadius: 10 }}
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") submitRename(f.id);
+                            if (e.key === "Escape") cancelRename();
+                          }}
+                        />
+                        <button onClick={() => submitRename(f.id)} style={{ padding: "8px 10px", borderRadius: 10 }}>
+                          Save
+                        </button>
+                        <button onClick={cancelRename} style={{ padding: "8px 10px", borderRadius: 10 }}>
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div
+                          onClick={() => setFolderFilterId(String(f.id))}
+                          style={{ flex: 1, cursor: "pointer" }}
+                          title="Click to filter notes by this folder"
+                        >
+                          <div style={{ fontWeight: 650, fontSize: 13, lineHeight: 1.1 }}>{f.name}</div>
+                          <div style={{ fontSize: 12, opacity: 0.6 }}>#{f.id}</div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenFolderMenuId((prev) => (prev === f.id ? null : f.id));
+                          }}
+                          style={{
+                            padding: "6px 10px",
+                            borderRadius: 10,
+                          }}
+                          aria-label="Folder menu"
+                          title="Menu"
+                        >
+                          ...
+                        </button>
+
+                        {menuOpen ? (
+                          <div
+                            onMouseDown={(e) => e.stopPropagation()}
+                            style={{
+                              position: "absolute",
+                              right: 10,
+                              top: "calc(100% + 6px)",
+                              zIndex: 20,
+                              width: 170,
+                              borderRadius: 12,
+                              border: "1px solid rgba(255,255,255,0.10)",
+                              background: "#1f1f1f",
+                              boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+                              padding: 6,
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => startRename(f)}
+                              style={{
+                                width: "100%",
+                                textAlign: "left",
+                                padding: "10px 10px",
+                                borderRadius: 10,
+                              }}
+                            >
+                              Rename
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteFolder(f.id)}
+                              style={{
+                                width: "100%",
+                                textAlign: "left",
+                                padding: "10px 10px",
+                                borderRadius: 10,
+                                marginTop: 4,
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        ) : null}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginBottom: 10, opacity: 0.7, fontSize: 13 }}>
+          Total: <strong>{total}</strong>
           {debouncedSearch ? (
             <>
-              Searching: <strong>{debouncedSearch}</strong>
-            </>
-          ) : (
-            "Showing all notes"
-          )}
-          {folderFilterId ? (
-            <>
               {" "}
-              in folder{" "}
-              <strong>
-                {folders.find((x) => String(x.id) === folderFilterId)?.name ?? folderFilterId}
-              </strong>
+              • Searching: <strong>{debouncedSearch}</strong>
             </>
           ) : null}
         </div>
+
+        <NotesList notes={notes} folders={folders} selectedId={selectedId} onSelect={setSelectedId} />
+
+        {/* Pagination */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+            marginTop: 12,
+            paddingTop: 12,
+            borderTop: "1px solid rgba(255,255,255,0.08)",
+          }}
+        >
+          <button onClick={goPrev} disabled={!canPrev}>
+            Prev
+          </button>
+
+          <div style={{ fontSize: 13, opacity: 0.85 }}>
+            Page <strong>{page}</strong>
+            {pages ? (
+              <>
+                {" "}
+                / <strong>{pages}</strong>
+              </>
+            ) : null}
+          </div>
+
+          <button onClick={goNext} disabled={!canNext}>
+            Next
+          </button>
+        </div>
       </div>
 
-      {/* Pagination UI */}
+      {/* MAIN EDITOR (different background) */}
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "1rem",
-          marginBottom: "1rem",
+          flex: 1,
+          minWidth: 0,
+          overflow: "auto",
+          background: "rgba(255,255,255,0.01)",
         }}
       >
-        <button onClick={goPrev} disabled={!canPrev}>
-          Prev
-        </button>
-
-        <div>
-          Page <strong>{page}</strong>{" "}
-          {pages ? (
-            <>
-              of <strong>{pages}</strong>
-            </>
-          ) : null}
-          <span style={{ marginLeft: "0.75rem", opacity: 0.8 }}>Total: {total}</span>
+        <div style={{ maxWidth: 980, margin: "0 auto" }}>
+          <NoteItem note={selectedNote} folders={folders} onDelete={handleDeleteInUI} onUpdate={handleUpdateInUI} />
         </div>
-
-        <button onClick={goNext} disabled={!canNext}>
-          Next
-        </button>
       </div>
 
-      <NotesList
-        notes={notes}
-        folders={folders}
-        onDelete={handleDeleteInUI}
-        onUpdate={handleUpdateInUI}
+      {/* DRAG HANDLE */}
+      <div
+        onMouseDown={startResize}
+        title="Drag to resize"
+        style={{
+          width: 6,
+          cursor: "col-resize",
+          background: "rgba(255,255,255,0.06)",
+        }}
       />
+
+      {/* AI PANEL (different background) */}
+      <div
+        style={{
+          width: aiWidth,
+          borderLeft: "1px solid rgba(255,255,255,0.08)",
+          padding: 12,
+          overflow: "auto",
+          background: "rgba(255,255,255,0.03)",
+        }}
+      >
+        <AiPanel noteId={selectedId} />
+      </div>
     </div>
   );
 }

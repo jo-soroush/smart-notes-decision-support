@@ -1,13 +1,15 @@
-import Header from './components/Header'
-import HomePage from './pages/HomePage'
+import Header from "./components/Header";
+import HomePage from "./pages/HomePage";
 
 function App() {
   return (
-    <div style={{ padding: '2rem' }}>
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
       <Header />
-      <HomePage />
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <HomePage />
+      </div>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
