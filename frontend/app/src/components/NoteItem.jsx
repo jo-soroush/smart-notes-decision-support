@@ -1,60 +1,68 @@
 import { useEffect, useMemo, useState } from "react";
 
-function hashString(str) {
-  let h = 5381;
-  for (let i = 0; i < str.length; i++) {
-    h = (h << 5) + h + str.charCodeAt(i);
-    h |= 0;
-  }
-  return String(h);
-}
-
 function NoteItem({ note, folders = [], onDelete, onUpdate }) {
   const [isEditing, setIsEditing] = useState(false);
 
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [status, setStatus] = useState(note.status);
-
   const [folderId, setFolderId] = useState(note.folder_id ? String(note.folder_id) : "");
 
   const [summary, setSummary] = useState(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [summaryError, setSummaryError] = useState(null);
 
-  const summaryStorageKey = useMemo(() => {
-    const signature = JSON.stringify({
-      id: note.id,
-      title: note.title,
-      content: note.content,
-      status: note.status,
-      folder_id: note.folder_id ?? null,
-    });
-    return `ai_summary:${note.id}:${hashString(signature)}`;
-  }, [note]);
-
   useEffect(() => {
     setTitle(note.title);
     setContent(note.content);
     setStatus(note.status);
     setFolderId(note.folder_id ? String(note.folder_id) : "");
-
-    const saved = localStorage.getItem(summaryStorageKey);
-    if (saved) {
-      setSummary(saved);
-    } else {
-      setSummary(null);
-    }
-
-    setSummaryError(null);
-    setLoadingSummary(false);
-  }, [note, summaryStorageKey]);
+  }, [note]);
 
   const folderName = useMemo(() => {
     if (!note.folder_id) return "None";
     const f = folders.find((x) => x.id === note.folder_id);
     return f ? f.name : `#${note.folder_id}`;
   }, [note.folder_id, folders]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadSummaryFromDB() {
+      setSummaryError(null);
+
+      try {
+        const params = new URLSearchParams({
+          note_id: String(note.id),
+          action_type: "summary",
+        });
+
+        const res = await fetch(`http://127.0.0.1:8000/ai/results/latest?${params.toString()}`);
+
+        if (res.status === 404) {
+          if (!ignore) setSummary(null);
+          return;
+        }
+
+        if (!res.ok) {
+          const text = await res.text();
+          if (!ignore) setSummaryError(`Load summary failed (${res.status}): ${text}`);
+          return;
+        }
+
+        const data = await res.json();
+        if (!ignore) setSummary(data?.result_text ?? null);
+      } catch (e) {
+        if (!ignore) setSummaryError("Load summary failed (network/server).");
+      }
+    }
+
+    loadSummaryFromDB();
+
+    return () => {
+      ignore = true;
+    };
+  }, [note.id]);
 
   async function handleDelete() {
     try {
@@ -105,8 +113,6 @@ function NoteItem({ note, folders = [], onDelete, onUpdate }) {
   }
 
   async function handleGenerateSummary() {
-    if (loadingSummary || summary) return;
-
     setLoadingSummary(true);
     setSummaryError(null);
 
@@ -122,32 +128,13 @@ function NoteItem({ note, folders = [], onDelete, onUpdate }) {
 
       if (!res.ok) {
         const text = await res.text();
-        console.error("AI summary failed:", res.status, text);
-
-        if (res.status === 503) {
-          setSummaryError("AI is temporarily unavailable (503). Try again later.");
-        } else {
-          setSummaryError(`AI summary failed (${res.status})`);
-        }
+        setSummaryError(text || `AI summary failed (${res.status})`);
         return;
       }
 
       const data = await res.json();
-
-      const extracted =
-        data?.result_text ??
-        data?.result ??
-        data?.output ??
-        data?.summary ??
-        null;
-
-      const finalText =
-        extracted == null ? JSON.stringify(data, null, 2) : String(extracted);
-
-      setSummary(finalText);
-      localStorage.setItem(summaryStorageKey, finalText);
+      setSummary(data?.result_text ?? null);
     } catch (err) {
-      console.error("Failed to generate summary:", err);
       setSummaryError("Failed to generate summary (network/server).");
     } finally {
       setLoadingSummary(false);
@@ -167,11 +154,7 @@ function NoteItem({ note, folders = [], onDelete, onUpdate }) {
           <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
             <button onClick={() => setIsEditing(true)}>Edit</button>
             <button onClick={handleDelete}>Delete</button>
-
-            <button
-              onClick={handleGenerateSummary}
-              disabled={loadingSummary || !!summary}
-            >
+            <button onClick={handleGenerateSummary} disabled={loadingSummary || !!summary}>
               {loadingSummary ? "Generating..." : summary ? "Summary Ready" : "AI Summary"}
             </button>
           </div>
@@ -221,11 +204,7 @@ function NoteItem({ note, folders = [], onDelete, onUpdate }) {
           />
 
           <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              style={{ padding: "0.5rem" }}
-            >
+            <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ padding: "0.5rem" }}>
               <option value="draft">draft</option>
               <option value="final">final</option>
               <option value="archived">archived</option>
