@@ -1,18 +1,17 @@
 import math
-from typing import List
 
 from app.db import get_db
+from app.models.folder import FolderModel
 from app.models.note import NoteModel
 from app.schemas.note import Note, NoteCreate, NotesPage
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
-notes_db: List[Note] = [
-    Note(id=1, title="First note", content="Hello from backend", status="draft", folder_id=None)
-]
+
 
 
 @router.get("", response_model=NotesPage)
@@ -65,17 +64,27 @@ def get_notes(
 
 @router.post("", response_model=Note)
 def create_note(note: NoteCreate, db: Session = Depends(get_db)):
+    if note.folder_id is not None:
+        exists = db.query(FolderModel.id).filter(FolderModel.id == note.folder_id).first()
+        if exists is None:
+            raise HTTPException(status_code=422, detail="Invalid folder_id (folder not found)")
+
     db_note = NoteModel(
         title=note.title,
         content=note.content,
         status=note.status,
         folder_id=note.folder_id,
     )
+
     db.add(db_note)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=422, detail="Invalid folder_id (foreign key constraint)")
+
     db.refresh(db_note)
     return db_note
-
 
 @router.put("/{note_id}", response_model=Note)
 def update_note(note_id: int, updated_note: NoteCreate, db: Session = Depends(get_db)):
@@ -83,12 +92,22 @@ def update_note(note_id: int, updated_note: NoteCreate, db: Session = Depends(ge
     if db_note is None:
         raise HTTPException(status_code=404, detail="Note not found")
 
+    if updated_note.folder_id is not None:
+        exists = db.query(FolderModel.id).filter(FolderModel.id == updated_note.folder_id).first()
+        if exists is None:
+            raise HTTPException(status_code=422, detail="Invalid folder_id (folder not found)")
+
     db_note.title = updated_note.title
     db_note.content = updated_note.content
     db_note.status = updated_note.status
     db_note.folder_id = updated_note.folder_id
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=422, detail="Invalid folder_id (foreign key constraint)")
+
     db.refresh(db_note)
     return db_note
 
