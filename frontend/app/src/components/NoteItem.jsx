@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 
+function hashString(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) {
+    h = (h << 5) + h + str.charCodeAt(i);
+    h |= 0;
+  }
+  return String(h);
+}
+
 function NoteItem({ note, folders = [], onDelete, onUpdate }) {
   const [isEditing, setIsEditing] = useState(false);
 
@@ -7,15 +16,39 @@ function NoteItem({ note, folders = [], onDelete, onUpdate }) {
   const [content, setContent] = useState(note.content);
   const [status, setStatus] = useState(note.status);
 
-  // store as string for select
   const [folderId, setFolderId] = useState(note.folder_id ? String(note.folder_id) : "");
+
+  const [summary, setSummary] = useState(null);
+  const [loadingSummary, setLoadingSummary] = useState(false);
+  const [summaryError, setSummaryError] = useState(null);
+
+  const summaryStorageKey = useMemo(() => {
+    const signature = JSON.stringify({
+      id: note.id,
+      title: note.title,
+      content: note.content,
+      status: note.status,
+      folder_id: note.folder_id ?? null,
+    });
+    return `ai_summary:${note.id}:${hashString(signature)}`;
+  }, [note]);
 
   useEffect(() => {
     setTitle(note.title);
     setContent(note.content);
     setStatus(note.status);
     setFolderId(note.folder_id ? String(note.folder_id) : "");
-  }, [note]);
+
+    const saved = localStorage.getItem(summaryStorageKey);
+    if (saved) {
+      setSummary(saved);
+    } else {
+      setSummary(null);
+    }
+
+    setSummaryError(null);
+    setLoadingSummary(false);
+  }, [note, summaryStorageKey]);
 
   const folderName = useMemo(() => {
     if (!note.folder_id) return "None";
@@ -71,6 +104,56 @@ function NoteItem({ note, folders = [], onDelete, onUpdate }) {
     }
   }
 
+  async function handleGenerateSummary() {
+    if (loadingSummary || summary) return;
+
+    setLoadingSummary(true);
+    setSummaryError(null);
+
+    try {
+      const res = await fetch("http://127.0.0.1:8000/ai/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          note_id: note.id,
+          action_type: "summary",
+        }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("AI summary failed:", res.status, text);
+
+        if (res.status === 503) {
+          setSummaryError("AI is temporarily unavailable (503). Try again later.");
+        } else {
+          setSummaryError(`AI summary failed (${res.status})`);
+        }
+        return;
+      }
+
+      const data = await res.json();
+
+      const extracted =
+        data?.result_text ??
+        data?.result ??
+        data?.output ??
+        data?.summary ??
+        null;
+
+      const finalText =
+        extracted == null ? JSON.stringify(data, null, 2) : String(extracted);
+
+      setSummary(finalText);
+      localStorage.setItem(summaryStorageKey, finalText);
+    } catch (err) {
+      console.error("Failed to generate summary:", err);
+      setSummaryError("Failed to generate summary (network/server).");
+    } finally {
+      setLoadingSummary(false);
+    }
+  }
+
   return (
     <div style={{ border: "1px solid #444", padding: "1rem", marginBottom: "1rem" }}>
       {!isEditing ? (
@@ -84,7 +167,37 @@ function NoteItem({ note, folders = [], onDelete, onUpdate }) {
           <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
             <button onClick={() => setIsEditing(true)}>Edit</button>
             <button onClick={handleDelete}>Delete</button>
+
+            <button
+              onClick={handleGenerateSummary}
+              disabled={loadingSummary || !!summary}
+            >
+              {loadingSummary ? "Generating..." : summary ? "Summary Ready" : "AI Summary"}
+            </button>
           </div>
+
+          {summaryError ? (
+            <p style={{ color: "tomato", marginTop: "0.75rem", marginBottom: 0 }}>
+              {summaryError}
+            </p>
+          ) : null}
+
+          {summary ? (
+            <div
+              style={{
+                marginTop: "0.75rem",
+                padding: "0.75rem",
+                background: "#222",
+                border: "1px solid #333",
+                borderRadius: "6px",
+              }}
+            >
+              <strong>AI Summary</strong>
+              <p style={{ marginTop: "0.5rem", marginBottom: 0, whiteSpace: "pre-wrap" }}>
+                {summary}
+              </p>
+            </div>
+          ) : null}
         </>
       ) : (
         <>
