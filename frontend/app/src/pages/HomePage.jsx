@@ -9,6 +9,11 @@ function HomePage() {
   const [folderFilterId, setFolderFilterId] = useState(""); // "" means all
   const [createFolderId, setCreateFolderId] = useState(""); // "" means no folder
 
+  // Folder manager UI state
+  const [newFolderName, setNewFolderName] = useState("");
+  const [renamingFolderId, setRenamingFolderId] = useState(null);
+  const [renameValue, setRenameValue] = useState("");
+
   // Pagination state
   const [page, setPage] = useState(1);
   const [limit] = useState(10);
@@ -105,13 +110,8 @@ function HomePage() {
       title: title.trim(),
       content: content.trim(),
       status: "draft",
+      folder_id: createFolderId ? Number(createFolderId) : null,
     };
-
-    if (createFolderId) {
-      payload.folder_id = Number(createFolderId);
-    } else {
-      payload.folder_id = null;
-    }
 
     try {
       const res = await fetch("http://127.0.0.1:8000/notes", {
@@ -135,8 +135,7 @@ function HomePage() {
       const createdFolderId = created?.folder_id ?? null;
       const filterFolderIdNum = folderFilterId ? Number(folderFilterId) : null;
 
-      const passesFolderFilter =
-        !folderFilterId || createdFolderId === filterFolderIdNum;
+      const passesFolderFilter = !folderFilterId || createdFolderId === filterFolderIdNum;
 
       if (page === 1 && !debouncedSearch && passesFolderFilter) {
         setNotes((prev) => [created, ...prev]);
@@ -167,6 +166,112 @@ function HomePage() {
 
   function goNext() {
     if (canNext) setPage((p) => p + 1);
+  }
+
+  async function handleCreateFolder(e) {
+    e.preventDefault();
+    const name = newFolderName.trim();
+    if (!name) return;
+
+    try {
+      const res = await fetch("http://127.0.0.1:8000/folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+
+     if (res.status === 409) {
+  alert("A folder with this name already exists.");
+  return;
+}
+
+if (!res.ok) {
+  const text = await res.text();
+  console.error("Create folder failed:", res.status, text);
+  alert("Failed to create folder.");
+  return;
+}
+
+      const created = await res.json();
+      setNewFolderName("");
+      setFolders((prev) => [...prev, created]);
+    } catch (err) {
+      console.error("Failed to create folder:", err);
+    }
+  }
+
+  function startRename(folder) {
+    setRenamingFolderId(folder.id);
+    setRenameValue(folder.name);
+  }
+
+  function cancelRename() {
+    setRenamingFolderId(null);
+    setRenameValue("");
+  }
+
+  async function submitRename(folderId) {
+    const name = renameValue.trim();
+    if (!name) return;
+
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/folders/${folderId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("Rename folder failed:", res.status, text);
+        return;
+      }
+
+      const updated = await res.json();
+      setFolders((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
+
+      if (folderFilterId && Number(folderFilterId) === updated.id) {
+        // nothing else needed, UI label will update via folders state
+      }
+
+      cancelRename();
+    } catch (err) {
+      console.error("Failed to rename folder:", err);
+    }
+  }
+
+  async function handleDeleteFolder(folderId) {
+    const folderName = folders.find((f) => f.id === folderId)?.name ?? String(folderId);
+
+    const ok = window.confirm(`Delete folder "${folderName}"? Notes will keep existing but their folder becomes empty.`);
+    if (!ok) return;
+
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/folders/${folderId}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("Delete folder failed:", res.status, text);
+        return;
+      }
+
+      setFolders((prev) => prev.filter((f) => f.id !== folderId));
+
+      if (folderFilterId && Number(folderFilterId) === folderId) {
+        setFolderFilterId("");
+      }
+
+      if (createFolderId && Number(createFolderId) === folderId) {
+        setCreateFolderId("");
+      }
+
+      // Notes currently on screen might have folder_id removed -> safest refresh
+      loadNotes();
+    } catch (err) {
+      console.error("Failed to delete folder:", err);
+    }
   }
 
   return (
@@ -209,6 +314,71 @@ function HomePage() {
         </div>
       </form>
 
+      {/* Folder Manager */}
+      <div style={{ border: "1px solid #444", padding: "0.75rem", marginBottom: "1rem" }}>
+        <h3 style={{ marginTop: 0 }}>Folders</h3>
+
+        <form onSubmit={handleCreateFolder} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem" }}>
+          <input
+            value={newFolderName}
+            onChange={(e) => setNewFolderName(e.target.value)}
+            placeholder="New folder name..."
+            style={{ flex: 1, padding: "0.5rem" }}
+          />
+          <button type="submit">Add</button>
+        </form>
+
+        {folders.length === 0 ? (
+          <p style={{ margin: 0, opacity: 0.8 }}>No folders yet.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {folders.map((f) => (
+              <div
+                key={f.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "0.5rem",
+                  border: "1px solid #333",
+                  padding: "0.5rem",
+                }}
+              >
+                {renamingFolderId === f.id ? (
+                  <>
+                    <input
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      style={{ flex: 1, padding: "0.4rem" }}
+                      placeholder="Folder name"
+                    />
+                    <button type="button" onClick={() => submitRename(f.id)}>
+                      Save
+                    </button>
+                    <button type="button" onClick={cancelRename}>
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ flex: 1 }}>
+                      <strong>{f.name}</strong> <span style={{ opacity: 0.7 }}>#{f.id}</span>
+                    </div>
+                    <button type="button" onClick={() => startRename(f)}>
+                      Rename
+                    </button>
+                    <button type="button" onClick={() => handleDeleteFolder(f.id)}>
+                      Delete
+                    </button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Filters */}
       <div style={{ marginBottom: "1rem" }}>
         <select
           value={folderFilterId}
@@ -243,13 +413,14 @@ function HomePage() {
               {" "}
               in folder{" "}
               <strong>
-                {folders.find((f) => String(f.id) === folderFilterId)?.name ?? folderFilterId}
+                {folders.find((x) => String(x.id) === folderFilterId)?.name ?? folderFilterId}
               </strong>
             </>
           ) : null}
         </div>
       </div>
 
+      {/* Pagination UI */}
       <div
         style={{
           display: "flex",
@@ -270,9 +441,7 @@ function HomePage() {
               of <strong>{pages}</strong>
             </>
           ) : null}
-          <span style={{ marginLeft: "0.75rem", opacity: 0.8 }}>
-            Total: {total}
-          </span>
+          <span style={{ marginLeft: "0.75rem", opacity: 0.8 }}>Total: {total}</span>
         </div>
 
         <button onClick={goNext} disabled={!canNext}>
@@ -281,11 +450,11 @@ function HomePage() {
       </div>
 
       <NotesList
-  notes={notes}
-  folders={folders}
-  onDelete={handleDeleteInUI}
-  onUpdate={handleUpdateInUI}
-/>
+        notes={notes}
+        folders={folders}
+        onDelete={handleDeleteInUI}
+        onUpdate={handleUpdateInUI}
+      />
     </div>
   );
 }

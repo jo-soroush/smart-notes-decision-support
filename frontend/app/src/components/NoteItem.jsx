@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 
-function NoteItem({ note, folders, onDelete, onUpdate }) {
+function NoteItem({ note, folders = [], onDelete, onUpdate }) {
   const [isEditing, setIsEditing] = useState(false);
 
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [status, setStatus] = useState(note.status);
+
+  // store as string for select
   const [folderId, setFolderId] = useState(note.folder_id ? String(note.folder_id) : "");
 
   useEffect(() => {
@@ -16,9 +18,9 @@ function NoteItem({ note, folders, onDelete, onUpdate }) {
   }, [note]);
 
   const folderName = useMemo(() => {
-    if (!note.folder_id) return null;
-    const f = (folders || []).find((x) => x.id === note.folder_id);
-    return f ? f.name : null;
+    if (!note.folder_id) return "None";
+    const f = folders.find((x) => x.id === note.folder_id);
+    return f ? f.name : `#${note.folder_id}`;
   }, [note.folder_id, folders]);
 
   async function handleDelete() {
@@ -69,25 +71,14 @@ function NoteItem({ note, folders, onDelete, onUpdate }) {
     }
   }
 
-  function handleCancel() {
-    setIsEditing(false);
-    setTitle(note.title);
-    setContent(note.content);
-    setStatus(note.status);
-    setFolderId(note.folder_id ? String(note.folder_id) : "");
-  }
-
   return (
     <div style={{ border: "1px solid #444", padding: "1rem", marginBottom: "1rem" }}>
       {!isEditing ? (
         <>
           <h3 style={{ margin: 0 }}>{note.title}</h3>
-
-          <p style={{ margin: "0.25rem 0", opacity: 0.85 }}>
-            Folder: <strong>{folderName ?? "None"}</strong>
-          </p>
-
           <p style={{ margin: "0.5rem 0" }}>{note.content}</p>
+
+          <p style={{ margin: 0, opacity: 0.9 }}>Folder: {folderName}</p>
           <p style={{ margin: 0 }}>Status: {note.status}</p>
 
           <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
@@ -116,7 +107,7 @@ function NoteItem({ note, folders, onDelete, onUpdate }) {
             placeholder="Content"
           />
 
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value)}
@@ -133,7 +124,7 @@ function NoteItem({ note, folders, onDelete, onUpdate }) {
               style={{ padding: "0.5rem", flex: 1 }}
             >
               <option value="">No folder</option>
-              {(folders || []).map((f) => (
+              {folders.map((f) => (
                 <option key={f.id} value={String(f.id)}>
                   {f.name}
                 </option>
@@ -143,7 +134,7 @@ function NoteItem({ note, folders, onDelete, onUpdate }) {
 
           <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
             <button onClick={handleSave}>Save (PUT)</button>
-            <button onClick={handleCancel}>Cancel</button>
+            <button onClick={() => setIsEditing(false)}>Cancel</button>
           </div>
         </>
       )}
