@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-function NoteItem({ note, folders = [], onDelete, onUpdate }) {
+function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
   const [title, setTitle] = useState(note?.title ?? "");
   const [content, setContent] = useState(note?.content ?? "");
   const [status, setStatus] = useState(note?.status ?? "draft");
@@ -14,11 +14,7 @@ function NoteItem({ note, folders = [], onDelete, onUpdate }) {
   }, [note?.id]);
 
   if (!note) {
-    return (
-      <div style={{ padding: 24, opacity: 0.75 }}>
-        Select a note…
-      </div>
-    );
+    return <div style={{ padding: 24, opacity: 0.75 }}>Select a note…</div>;
   }
 
   async function handleSave() {
@@ -42,7 +38,11 @@ function NoteItem({ note, folders = [], onDelete, onUpdate }) {
       }
 
       const updated = await res.json();
+
       if (onUpdate) onUpdate(updated);
+
+      // ✅ refresh list + folders so UI moves note between folders immediately
+      if (onRefresh) onRefresh();
     } catch (err) {
       console.error("Failed to update note:", err);
     }
@@ -63,6 +63,9 @@ function NoteItem({ note, folders = [], onDelete, onUpdate }) {
       }
 
       if (onDelete) onDelete(note.id);
+
+      // ✅ refresh list + folders
+      if (onRefresh) onRefresh();
     } catch (err) {
       console.error("Failed to delete note:", err);
     }

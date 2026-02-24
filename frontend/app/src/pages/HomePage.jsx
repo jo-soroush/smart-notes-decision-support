@@ -10,7 +10,7 @@ function clamp(n, min, max) {
 function HomePage() {
   const [notes, setNotes] = useState([]);
 
-  // Folders
+  // Folders (now includes note_count)
   const [folders, setFolders] = useState([]);
   const [folderFilterId, setFolderFilterId] = useState("");
   const [newFolderName, setNewFolderName] = useState("");
@@ -42,7 +42,6 @@ function HomePage() {
   const rootRef = useRef(null);
   const isResizingRef = useRef(false);
 
-  // width in px for AI panel
   const [aiWidth, setAiWidth] = useState(() => {
     const saved = Number(localStorage.getItem("aiPanelWidth") || 360);
     return clamp(saved || 360, 280, 620);
@@ -68,13 +67,7 @@ function HomePage() {
       const rect = root.getBoundingClientRect();
       const x = e.clientX;
 
-      // Sidebar fixed width:
-      const sidebarW = 320;
-
-      // AI panel width = distance from right edge
       const newWidth = rect.right - x;
-
-      // Clamp to nice limits
       setAiWidth(clamp(newWidth, 280, 620));
     }
 
@@ -92,12 +85,11 @@ function HomePage() {
       window.removeEventListener("mouseup", onUp);
     };
   }, []);
-
   // ----------------------------
 
   async function loadFolders() {
     try {
-      const res = await fetch("http://127.0.0.1:8000/folders");
+      const res = await fetch("http://127.0.0.1:8000/folders/with_counts");
       if (!res.ok) {
         console.error("Failed to load folders:", res.status, await res.text());
         return;
@@ -203,6 +195,8 @@ function HomePage() {
         setPage(1);
         setSelectedId(created.id);
       }
+
+      loadFolders();
     } catch (e) {
       console.error("Failed to create note:", e);
     }
@@ -212,10 +206,12 @@ function HomePage() {
     setNotes((prev) => prev.filter((n) => n.id !== deletedId));
     setTotal((t) => Math.max(0, t - 1));
     setSelectedId((prev) => (prev === deletedId ? null : prev));
+    loadFolders();
   }
 
   function handleUpdateInUI(updatedNote) {
     setNotes((prev) => prev.map((n) => (n.id === updatedNote.id ? updatedNote : n)));
+    loadFolders();
   }
 
   const canPrev = page > 1;
@@ -252,9 +248,8 @@ function HomePage() {
         return;
       }
 
-      const created = await res.json();
       setNewFolderName("");
-      setFolders((prev) => [...prev, created]);
+      loadFolders();
     } catch (err) {
       console.error("Failed to create folder:", err);
     }
@@ -287,9 +282,8 @@ function HomePage() {
         return;
       }
 
-      const updated = await res.json();
-      setFolders((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
       cancelRename();
+      loadFolders();
     } catch (err) {
       console.error("Failed to rename folder:", err);
     }
@@ -310,11 +304,11 @@ function HomePage() {
         return;
       }
 
-      setFolders((prev) => prev.filter((f) => f.id !== folderId));
       if (folderFilterId && Number(folderFilterId) === folderId) setFolderFilterId("");
       setOpenFolderMenuId(null);
 
       loadNotes();
+      loadFolders();
     } catch (err) {
       console.error("Failed to delete folder:", err);
     }
@@ -397,6 +391,7 @@ function HomePage() {
                 const isFiltered = folderFilterId && Number(folderFilterId) === f.id;
                 const menuOpen = openFolderMenuId === f.id;
                 const isRenaming = renamingFolderId === f.id;
+                const count = typeof f.note_count === "number" ? f.note_count : 0;
 
                 return (
                   <div
@@ -438,8 +433,15 @@ function HomePage() {
                           style={{ flex: 1, cursor: "pointer" }}
                           title="Click to filter notes by this folder"
                         >
-                          <div style={{ fontWeight: 650, fontSize: 13, lineHeight: 1.1 }}>{f.name}</div>
-                          <div style={{ fontSize: 12, opacity: 0.6 }}>#{f.id}</div>
+                          <div style={{ fontWeight: 650, fontSize: 13, lineHeight: 1.1 }}>
+                            {f.name}{" "}
+                            <span style={{ opacity: 0.7, fontWeight: 700 }}>
+                              ({count})
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12, opacity: 0.65 }}>
+                            {count === 1 ? "1 note" : `${count} notes`}
+                          </div>
                         </div>
 
                         <button
@@ -558,7 +560,7 @@ function HomePage() {
         </div>
       </div>
 
-      {/* MAIN EDITOR (different background) */}
+      {/* MAIN EDITOR */}
       <div
         style={{
           flex: 1,
@@ -568,7 +570,16 @@ function HomePage() {
         }}
       >
         <div style={{ maxWidth: 980, margin: "0 auto" }}>
-          <NoteItem note={selectedNote} folders={folders} onDelete={handleDeleteInUI} onUpdate={handleUpdateInUI} />
+          <NoteItem
+  note={selectedNote}
+  folders={folders}
+  onDelete={handleDeleteInUI}
+  onUpdate={handleUpdateInUI}
+  onRefresh={() => {
+    loadNotes();
+    loadFolders();
+  }}
+/>
         </div>
       </div>
 
@@ -583,7 +594,7 @@ function HomePage() {
         }}
       />
 
-      {/* AI PANEL (different background) */}
+      {/* AI PANEL */}
       <div
         style={{
           width: aiWidth,

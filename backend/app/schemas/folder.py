@@ -1,12 +1,21 @@
 from pydantic import BaseModel
 
 
-class FolderCreate(BaseModel):
+class FolderBase(BaseModel):
     name: str
 
 
-class Folder(BaseModel):
+class FolderCreate(FolderBase):
+    pass
+
+
+class Folder(FolderBase):
     id: int
-    name: str
 
-    model_config = {"from_attributes": True}
+    class Config:
+        from_attributes = True
+
+
+# ✅ NEW
+class FolderWithCount(Folder):
+    note_count: int

@@ -1,8 +1,9 @@
 from app.db import get_db
 from app.models.folder import FolderModel
 from app.models.note import NoteModel
-from app.schemas.folder import Folder, FolderCreate
+from app.schemas.folder import Folder, FolderCreate, FolderWithCount
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,24 @@ router = APIRouter(prefix="/folders", tags=["folders"])
 @router.get("", response_model=list[Folder])
 def get_folders(db: Session = Depends(get_db)):
     return db.query(FolderModel).order_by(FolderModel.id.asc()).all()
+
+
+# ✅ NEW: folders with note_count (for cleaner UI)
+@router.get("/with_counts", response_model=list[FolderWithCount])
+def get_folders_with_counts(db: Session = Depends(get_db)):
+    rows = (
+        db.query(
+            FolderModel.id.label("id"),
+            FolderModel.name.label("name"),
+            func.count(NoteModel.id).label("note_count"),
+        )
+        .outerjoin(NoteModel, NoteModel.folder_id == FolderModel.id)
+        .group_by(FolderModel.id, FolderModel.name)
+        .order_by(FolderModel.id.asc())
+        .all()
+    )
+
+    return [{"id": r.id, "name": r.name, "note_count": int(r.note_count)} for r in rows]
 
 
 @router.post("", response_model=Folder)

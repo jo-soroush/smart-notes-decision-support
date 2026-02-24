@@ -1,8 +1,11 @@
-from typing import List
+from typing import TYPE_CHECKING, List
 
 from app.models.base import Base
 from sqlalchemy import Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+if TYPE_CHECKING:
+    from app.models.note import NoteModel
 
 
 class FolderModel(Base):
@@ -14,5 +17,4 @@ class FolderModel(Base):
     # Relationship to notes
     notes: Mapped[List["NoteModel"]] = relationship(
         back_populates="folder",
-        cascade="all, delete"
     )
