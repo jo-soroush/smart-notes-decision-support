@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+from app.routes.auth import router as auth_router
 from app.routes.ai import router as ai_router
 from app.routes.folders import router as folders_router
 from app.routes.notes import router as notes_router
@@ -36,6 +37,7 @@ app.add_middleware(
 app.include_router(notes_router)
 app.include_router(ai_router)
 app.include_router(folders_router)
+app.include_router(auth_router)
 
 
 @app.get("/health", response_model=dict)

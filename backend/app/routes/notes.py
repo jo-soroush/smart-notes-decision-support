@@ -1,5 +1,6 @@
 import math
 
+from app.core.deps import get_current_user
 from app.db import get_db
 from app.models.folder import FolderModel
 from app.models.note import NoteModel
@@ -9,9 +10,11 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-router = APIRouter(prefix="/notes", tags=["notes"])
-
-
+router = APIRouter(
+    prefix="/notes",
+    tags=["notes"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.get("", response_model=NotesPage)
@@ -85,6 +88,7 @@ def create_note(note: NoteCreate, db: Session = Depends(get_db)):
 
     db.refresh(db_note)
     return db_note
+
 
 @router.put("/{note_id}", response_model=Note)
 def update_note(note_id: int, updated_note: NoteCreate, db: Session = Depends(get_db)):
