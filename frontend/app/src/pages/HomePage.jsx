@@ -3,42 +3,28 @@ import NotesList from "../components/NotesList";
 import NoteItem from "../components/NoteItem";
 import AiPanel from "../components/AiPanel";
 
+const API_BASE = "http://127.0.0.1:8000";
+
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
 function HomePage() {
   const [notes, setNotes] = useState([]);
-
-  // Folders (now includes note_count)
   const [folders, setFolders] = useState([]);
   const [folderFilterId, setFolderFilterId] = useState("");
   const [newFolderName, setNewFolderName] = useState("");
 
-  // Folder menu + rename UI
-  const [openFolderMenuId, setOpenFolderMenuId] = useState(null);
-  const [renamingFolderId, setRenamingFolderId] = useState(null);
-  const [renameValue, setRenameValue] = useState("");
-
-  // Pagination state
   const [page, setPage] = useState(1);
   const [limit] = useState(10);
-
-  // Meta from backend
   const [pages, setPages] = useState(0);
   const [total, setTotal] = useState(0);
 
-  // Live search state
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-
-  // Selected note
   const [selectedId, setSelectedId] = useState(null);
 
-  // Abort ongoing request
   const abortRef = useRef(null);
-
-  // ---- Resizable AI Panel ----
   const rootRef = useRef(null);
   const isResizingRef = useRef(false);
 
@@ -51,6 +37,31 @@ function HomePage() {
     localStorage.setItem("aiPanelWidth", String(aiWidth));
   }, [aiWidth]);
 
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 400);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, folderFilterId]);
+
+  function getAuthHeaders(extra = {}) {
+    const token = localStorage.getItem("token");
+    return {
+      ...extra,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  }
+
+  function handleUnauthorized(res) {
+    if (res.status === 401) {
+      // Token is missing/expired/invalid -> clear it so UI can react later if you add login routing
+      localStorage.removeItem("token");
+    }
+  }
+
+  // ---- Resizable AI Panel ----
   function startResize(e) {
     e.preventDefault();
     isResizingRef.current = true;
@@ -66,7 +77,6 @@ function HomePage() {
 
       const rect = root.getBoundingClientRect();
       const x = e.clientX;
-
       const newWidth = rect.right - x;
       setAiWidth(clamp(newWidth, 280, 620));
     }
@@ -89,26 +99,22 @@ function HomePage() {
 
   async function loadFolders() {
     try {
-      const res = await fetch("http://127.0.0.1:8000/folders/with_counts");
+      const res = await fetch(`${API_BASE}/folders/with_counts`, {
+        headers: getAuthHeaders(),
+      });
+
       if (!res.ok) {
+        handleUnauthorized(res);
         console.error("Failed to load folders:", res.status, await res.text());
         return;
       }
+
       const data = await res.json();
       setFolders(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to load folders:", err);
     }
   }
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search.trim()), 400);
-    return () => clearTimeout(t);
-  }, [search]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch, folderFilterId]);
 
   async function loadNotes() {
     if (abortRef.current) abortRef.current.abort();
@@ -122,11 +128,13 @@ function HomePage() {
       if (debouncedSearch) params.set("search", debouncedSearch);
       if (folderFilterId) params.set("folder_id", folderFilterId);
 
-      const res = await fetch(`http://127.0.0.1:8000/notes?${params.toString()}`, {
+      const res = await fetch(`${API_BASE}/notes?${params.toString()}`, {
         signal: controller.signal,
+        headers: getAuthHeaders(),
       });
 
       if (!res.ok) {
+        handleUnauthorized(res);
         console.error("Failed to load notes:", res.status, await res.text());
         return;
       }
@@ -154,6 +162,7 @@ function HomePage() {
 
   useEffect(() => {
     loadFolders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -172,19 +181,21 @@ function HomePage() {
     };
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/notes", {
+      const res = await fetch(`${API_BASE}/notes`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
-        console.error("POST failed:", res.status, await res.text());
+        handleUnauthorized(res);
+        console.error("POST /notes failed:", res.status, await res.text());
         return;
       }
 
       const created = await res.json();
 
+      // keep behaviour similar to your original version
       if (page === 1 && !debouncedSearch) {
         setNotes((prev) => [created, ...prev]);
         setTotal((t) => t + 1);
@@ -199,6 +210,37 @@ function HomePage() {
       loadFolders();
     } catch (e) {
       console.error("Failed to create note:", e);
+    }
+  }
+
+  async function handleCreateFolder(e) {
+    e.preventDefault();
+    const name = newFolderName.trim();
+    if (!name) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/folders`, {
+        method: "POST",
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ name }),
+      });
+
+      if (res.status === 409) {
+        alert("A folder with this name already exists.");
+        return;
+      }
+
+      if (!res.ok) {
+        handleUnauthorized(res);
+        console.error("Create folder failed:", res.status, await res.text());
+        alert("Failed to create folder.");
+        return;
+      }
+
+      setNewFolderName("");
+      loadFolders();
+    } catch (err) {
+      console.error("Failed to create folder:", err);
     }
   }
 
@@ -224,104 +266,6 @@ function HomePage() {
   function goNext() {
     if (canNext) setPage((p) => p + 1);
   }
-
-  async function handleCreateFolder(e) {
-    e.preventDefault();
-    const name = newFolderName.trim();
-    if (!name) return;
-
-    try {
-      const res = await fetch("http://127.0.0.1:8000/folders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-
-      if (res.status === 409) {
-        alert("A folder with this name already exists.");
-        return;
-      }
-
-      if (!res.ok) {
-        console.error("Create folder failed:", res.status, await res.text());
-        alert("Failed to create folder.");
-        return;
-      }
-
-      setNewFolderName("");
-      loadFolders();
-    } catch (err) {
-      console.error("Failed to create folder:", err);
-    }
-  }
-
-  function startRename(folder) {
-    setRenamingFolderId(folder.id);
-    setRenameValue(folder.name);
-    setOpenFolderMenuId(null);
-  }
-
-  function cancelRename() {
-    setRenamingFolderId(null);
-    setRenameValue("");
-  }
-
-  async function submitRename(folderId) {
-    const name = renameValue.trim();
-    if (!name) return;
-
-    try {
-      const res = await fetch(`http://127.0.0.1:8000/folders/${folderId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-
-      if (!res.ok) {
-        console.error("Rename folder failed:", res.status, await res.text());
-        return;
-      }
-
-      cancelRename();
-      loadFolders();
-    } catch (err) {
-      console.error("Failed to rename folder:", err);
-    }
-  }
-
-  async function handleDeleteFolder(folderId) {
-    const folderName = folders.find((f) => f.id === folderId)?.name ?? String(folderId);
-    const ok = window.confirm(`Delete folder "${folderName}"?\nNotes will keep existing but their folder becomes empty.`);
-    if (!ok) return;
-
-    try {
-      const res = await fetch(`http://127.0.0.1:8000/folders/${folderId}`, {
-        method: "DELETE",
-      });
-
-      if (!res.ok) {
-        console.error("Delete folder failed:", res.status, await res.text());
-        return;
-      }
-
-      if (folderFilterId && Number(folderFilterId) === folderId) setFolderFilterId("");
-      setOpenFolderMenuId(null);
-
-      loadNotes();
-      loadFolders();
-    } catch (err) {
-      console.error("Failed to delete folder:", err);
-    }
-  }
-
-  // close folder menu on outside click
-  useEffect(() => {
-    function onDocMouseDown() {
-      if (openFolderMenuId !== null) setOpenFolderMenuId(null);
-    }
-    document.addEventListener("mousedown", onDocMouseDown);
-    return () => document.removeEventListener("mousedown", onDocMouseDown);
-  }, [openFolderMenuId]);
 
   return (
     <div ref={rootRef} style={{ height: "100%", display: "flex", minHeight: 0 }}>
@@ -379,143 +323,6 @@ function HomePage() {
           </button>
         </form>
 
-        {/* Folder list */}
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ fontWeight: 800, marginBottom: 8, opacity: 0.9, fontSize: 13 }}>Folders</div>
-
-          {folders.length === 0 ? (
-            <div style={{ fontSize: 13, opacity: 0.7 }}>No folders yet.</div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {folders.map((f) => {
-                const isFiltered = folderFilterId && Number(folderFilterId) === f.id;
-                const menuOpen = openFolderMenuId === f.id;
-                const isRenaming = renamingFolderId === f.id;
-                const count = typeof f.note_count === "number" ? f.note_count : 0;
-
-                return (
-                  <div
-                    key={f.id}
-                    style={{
-                      position: "relative",
-                      border: isFiltered ? "1px solid rgba(255,255,255,0.16)" : "1px solid rgba(255,255,255,0.08)",
-                      background: isFiltered ? "rgba(255,255,255,0.05)" : "transparent",
-                      borderRadius: 10,
-                      padding: "8px 10px",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                    }}
-                  >
-                    {isRenaming ? (
-                      <>
-                        <input
-                          value={renameValue}
-                          onChange={(e) => setRenameValue(e.target.value)}
-                          style={{ flex: 1, padding: "8px 10px", borderRadius: 10 }}
-                          autoFocus
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") submitRename(f.id);
-                            if (e.key === "Escape") cancelRename();
-                          }}
-                        />
-                        <button onClick={() => submitRename(f.id)} style={{ padding: "8px 10px", borderRadius: 10 }}>
-                          Save
-                        </button>
-                        <button onClick={cancelRename} style={{ padding: "8px 10px", borderRadius: 10 }}>
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <div
-                          onClick={() => setFolderFilterId(String(f.id))}
-                          style={{ flex: 1, cursor: "pointer" }}
-                          title="Click to filter notes by this folder"
-                        >
-                          <div style={{ fontWeight: 650, fontSize: 13, lineHeight: 1.1 }}>
-                            {f.name}{" "}
-                            <span style={{ opacity: 0.7, fontWeight: 700 }}>
-                              ({count})
-                            </span>
-                          </div>
-                          <div style={{ fontSize: 12, opacity: 0.65 }}>
-                            {count === 1 ? "1 note" : `${count} notes`}
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            e.preventDefault();
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setOpenFolderMenuId((prev) => (prev === f.id ? null : f.id));
-                          }}
-                          style={{
-                            padding: "6px 10px",
-                            borderRadius: 10,
-                          }}
-                          aria-label="Folder menu"
-                          title="Menu"
-                        >
-                          ...
-                        </button>
-
-                        {menuOpen ? (
-                          <div
-                            onMouseDown={(e) => e.stopPropagation()}
-                            style={{
-                              position: "absolute",
-                              right: 10,
-                              top: "calc(100% + 6px)",
-                              zIndex: 20,
-                              width: 170,
-                              borderRadius: 12,
-                              border: "1px solid rgba(255,255,255,0.10)",
-                              background: "#1f1f1f",
-                              boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
-                              padding: 6,
-                            }}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => startRename(f)}
-                              style={{
-                                width: "100%",
-                                textAlign: "left",
-                                padding: "10px 10px",
-                                borderRadius: 10,
-                              }}
-                            >
-                              Rename
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteFolder(f.id)}
-                              style={{
-                                width: "100%",
-                                textAlign: "left",
-                                padding: "10px 10px",
-                                borderRadius: 10,
-                                marginTop: 4,
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        ) : null}
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
         <div style={{ marginBottom: 10, opacity: 0.7, fontSize: 13 }}>
           Total: <strong>{total}</strong>
           {debouncedSearch ? (
@@ -571,15 +378,15 @@ function HomePage() {
       >
         <div style={{ maxWidth: 980, margin: "0 auto" }}>
           <NoteItem
-  note={selectedNote}
-  folders={folders}
-  onDelete={handleDeleteInUI}
-  onUpdate={handleUpdateInUI}
-  onRefresh={() => {
-    loadNotes();
-    loadFolders();
-  }}
-/>
+            note={selectedNote}
+            folders={folders}
+            onDelete={handleDeleteInUI}
+            onUpdate={handleUpdateInUI}
+            onRefresh={() => {
+              loadNotes();
+              loadFolders();
+            }}
+          />
         </div>
       </div>
 
