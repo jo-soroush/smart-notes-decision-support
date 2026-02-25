@@ -1,12 +1,13 @@
 from typing import TYPE_CHECKING, List, Optional
 
 from app.models.base import Base
-from app.models.folder import FolderModel
 from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
     from app.models.ai_result import AiResult
+    from app.models.folder import FolderModel
+    from app.models.user import UserModel
 
 
 class NoteModel(Base):
@@ -23,7 +24,20 @@ class NoteModel(Base):
         nullable=True,
     )
 
+    # NEW: owner user
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+
     folder: Mapped[Optional["FolderModel"]] = relationship(
+        back_populates="notes"
+    )
+
+    # NEW: relationship to UserModel
+    user: Mapped["UserModel"] = relationship(
         back_populates="notes"
     )
 
