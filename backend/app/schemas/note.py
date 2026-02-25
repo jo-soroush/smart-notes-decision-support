@@ -6,7 +6,7 @@ from pydantic import BaseModel
 class NoteCreate(BaseModel):
     title: str
     content: str
-    status: str
+    status: str = "draft"
     folder_id: Optional[int] = None
 
 
@@ -26,3 +26,4 @@ class NotesPage(BaseModel):
     page: int
     limit: int
     pages: int
+    
