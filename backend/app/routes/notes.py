@@ -4,6 +4,7 @@ from app.core.deps import get_current_user
 from app.db import get_db
 from app.models.folder import FolderModel
 from app.models.note import NoteModel
+from app.models.user import UserModel
 from app.schemas.note import Note, NoteCreate, NotesPage
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
@@ -20,13 +21,14 @@ router = APIRouter(
 @router.get("", response_model=NotesPage)
 def get_notes(
     db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
     search: str | None = Query(default=None),
     status: str | None = Query(default=None),
     folder_id: int | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=10, ge=1, le=100),
 ):
-    query = db.query(NoteModel)
+    query = db.query(NoteModel).filter(NoteModel.user_id == current_user.id)
 
     if status:
         query = query.filter(NoteModel.status == status)
@@ -44,7 +46,6 @@ def get_notes(
         )
 
     total = query.count()
-
     offset = (page - 1) * limit
 
     items = (
@@ -66,7 +67,11 @@ def get_notes(
 
 
 @router.post("", response_model=Note)
-def create_note(note: NoteCreate, db: Session = Depends(get_db)):
+def create_note(
+    note: NoteCreate,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
     if note.folder_id is not None:
         exists = db.query(FolderModel.id).filter(FolderModel.id == note.folder_id).first()
         if exists is None:
@@ -77,6 +82,7 @@ def create_note(note: NoteCreate, db: Session = Depends(get_db)):
         content=note.content,
         status=note.status,
         folder_id=note.folder_id,
+        user_id=current_user.id,
     )
 
     db.add(db_note)
@@ -91,8 +97,17 @@ def create_note(note: NoteCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{note_id}", response_model=Note)
-def update_note(note_id: int, updated_note: NoteCreate, db: Session = Depends(get_db)):
-    db_note = db.query(NoteModel).filter(NoteModel.id == note_id).first()
+def update_note(
+    note_id: int,
+    updated_note: NoteCreate,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    db_note = (
+        db.query(NoteModel)
+        .filter(NoteModel.id == note_id, NoteModel.user_id == current_user.id)
+        .first()
+    )
     if db_note is None:
         raise HTTPException(status_code=404, detail="Note not found")
 
@@ -117,8 +132,16 @@ def update_note(note_id: int, updated_note: NoteCreate, db: Session = Depends(ge
 
 
 @router.delete("/{note_id}")
-def delete_note(note_id: int, db: Session = Depends(get_db)):
-    db_note = db.query(NoteModel).filter(NoteModel.id == note_id).first()
+def delete_note(
+    note_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    db_note = (
+        db.query(NoteModel)
+        .filter(NoteModel.id == note_id, NoteModel.user_id == current_user.id)
+        .first()
+    )
     if db_note is None:
         raise HTTPException(status_code=404, detail="Note not found")
 
