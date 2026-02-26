@@ -13,6 +13,14 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
     setFolderId(note?.folder_id ? String(note.folder_id) : "");
   }, [note?.id]);
 
+  function getAuthHeaders(extra = {}) {
+    const token = localStorage.getItem("token");
+    return {
+      ...extra,
+      Authorization: `Bearer ${token}`,
+    };
+  }
+
   if (!note) {
     return <div style={{ padding: 24, opacity: 0.75 }}>Select a note…</div>;
   }
@@ -28,7 +36,7 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
     try {
       const res = await fetch(`http://127.0.0.1:8000/notes/${note.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(payload),
       });
 
@@ -38,10 +46,7 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
       }
 
       const updated = await res.json();
-
       if (onUpdate) onUpdate(updated);
-
-      // ✅ refresh list + folders so UI moves note between folders immediately
       if (onRefresh) onRefresh();
     } catch (err) {
       console.error("Failed to update note:", err);
@@ -55,6 +60,7 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
     try {
       const res = await fetch(`http://127.0.0.1:8000/notes/${note.id}`, {
         method: "DELETE",
+        headers: getAuthHeaders(),
       });
 
       if (!res.ok) {
@@ -63,8 +69,6 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
       }
 
       if (onDelete) onDelete(note.id);
-
-      // ✅ refresh list + folders
       if (onRefresh) onRefresh();
     } catch (err) {
       console.error("Failed to delete note:", err);
