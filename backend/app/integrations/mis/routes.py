@@ -1,9 +1,11 @@
 from datetime import date
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.db import SessionLocal
+from app.core.deps import get_current_user
 from app.integrations.mis.models import ExternalRun
+from app.models.user import UserModel
 
 router = APIRouter(prefix="/api/integrations/mis", tags=["MIS"])
 
@@ -15,7 +17,10 @@ class MISIngestRequest(BaseModel):
 
 
 @router.post("/ingest")
-def mis_ingest(body: MISIngestRequest):
+def mis_ingest(
+    current_user: UserModel = Depends(get_current_user),
+    body: MISIngestRequest = ...,
+):
     run_id = body.run_manifest.get("run_id")
     if not run_id:
         raise HTTPException(status_code=400, detail="run_id is required")
