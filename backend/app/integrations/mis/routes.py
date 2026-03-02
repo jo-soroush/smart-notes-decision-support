@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.db import SessionLocal
 from app.core.deps import get_current_user
+from app.models.note import NoteModel
 from app.integrations.mis.models import ExternalRun
 from app.models.user import UserModel
 
@@ -67,6 +68,17 @@ def mis_ingest(
             raw_payload=body.run_manifest,
         )
         db.add(record)
+        note = NoteModel(
+            title=f"MIS Run {run_id}",
+            content=body.daily_snapshot,
+            status="draft",
+            type="external_mis",
+            source_system=body.source_system,
+            external_run_id=record.id,
+            note_metadata=body.run_manifest,
+            user_id=current_user.id,
+        )
+        db.add(note)
         db.commit()
         db.refresh(record)
         return {"status": "ingested", "external_run_id": str(record.id), "run_id": run_id}
