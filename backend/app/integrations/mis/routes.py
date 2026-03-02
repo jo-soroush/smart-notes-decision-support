@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.db import SessionLocal
@@ -18,17 +20,56 @@ def mis_ingest(body: MISIngestRequest):
     if not run_id:
         raise HTTPException(status_code=400, detail="run_id is required")
 
+    m = body.run_manifest
+
+    raw_dt = m.get("dt")
+    if not raw_dt:
+        raise HTTPException(status_code=422, detail="dt is required and must be YYYY-MM-DD")
+    try:
+        parsed_dt = date.fromisoformat(raw_dt)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="dt is required and must be YYYY-MM-DD")
+
+    symbol = m.get("symbol")
+    if not symbol:
+        raise HTTPException(status_code=422, detail="symbol is required")
+
+    timeframe = m.get("timeframe")
+    if not timeframe:
+        raise HTTPException(status_code=422, detail="timeframe is required")
+
+    pipeline_status = m.get("pipeline_status") or "UNKNOWN"
+
     db = SessionLocal()
     try:
         existing = db.query(ExternalRun).filter_by(
             source_system=body.source_system, run_id=run_id
         ).first()
+
+        if existing:
+            return {"status": "skipped", "reason": "duplicate run"}
+
+        record = ExternalRun(
+            source_system=body.source_system,
+            run_id=run_id,
+            dt=parsed_dt,
+            symbol=symbol,
+            timeframe=timeframe,
+            pipeline_status=pipeline_status,
+            market_flag=m.get("market_flag"),
+            risk_mode=m.get("risk_mode"),
+            manifest_path=m.get("manifest_path"),
+            raw_payload=body.run_manifest,
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+        return {"status": "ingested", "external_run_id": str(record.id), "run_id": run_id}
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
-
-    if existing:
-        return {"status": "skipped", "reason": "duplicate run"}
-    return {"status": "validated", "run_id": run_id}
 
 
 @router.get("/health")
