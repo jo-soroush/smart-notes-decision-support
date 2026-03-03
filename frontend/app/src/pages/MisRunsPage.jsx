@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
 
-function MisRunsPage() {
+function MisRunsPage({ onOpenNote }) {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
 
@@ -9,7 +9,7 @@ function MisRunsPage() {
   const [offset, setOffset] = useState(0);
 
   const [symbol, setSymbol] = useState("");
-  const [sort, setSort] = useState("dt"); // dt | created_at
+  const [sort, setSort] = useState("created_at"); // dt | created_at
   const [order, setOrder] = useState("desc"); // asc | desc
 
   const [loading, setLoading] = useState(false);
@@ -71,6 +71,16 @@ function MisRunsPage() {
   function goNext() {
     if (!canNext) return;
     setOffset((v) => v + limit);
+  }
+
+  function handleOpenLinkedNote(linkedNoteId) {
+    if (!linkedNoteId) return;
+
+    // ✅ key: tell HomePage which note to open
+    localStorage.setItem("open_note_id", String(linkedNoteId));
+
+    // ✅ then switch view back to home (App.jsx provided this)
+    if (onOpenNote) onOpenNote();
   }
 
   return (
@@ -161,23 +171,41 @@ function MisRunsPage() {
                 <th style={{ textAlign: "left", padding: 10 }}>timeframe</th>
                 <th style={{ textAlign: "left", padding: 10 }}>run_id</th>
                 <th style={{ textAlign: "left", padding: 10 }}>status</th>
+                <th style={{ textAlign: "left", padding: 10 }}>linked_note</th>
                 <th style={{ textAlign: "left", padding: 10 }}>created_at</th>
               </tr>
             </thead>
             <tbody>
-              {items.map((r) => (
-                <tr key={r.id} style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                  <td style={{ padding: 10, whiteSpace: "nowrap" }}>{r.dt}</td>
-                  <td style={{ padding: 10, whiteSpace: "nowrap" }}>{r.symbol}</td>
-                  <td style={{ padding: 10, whiteSpace: "nowrap" }}>{r.timeframe}</td>
-                  <td style={{ padding: 10, fontFamily: "monospace" }}>{r.run_id}</td>
-                  <td style={{ padding: 10, whiteSpace: "nowrap" }}>{r.pipeline_status}</td>
-                  <td style={{ padding: 10, whiteSpace: "nowrap" }}>{r.created_at}</td>
-                </tr>
-              ))}
+              {items.map((r) => {
+                const linked = r.linked_note_id ?? null;
+                const canOpen = Boolean(linked);
+
+                return (
+                  <tr key={r.id} style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                    <td style={{ padding: 10, whiteSpace: "nowrap" }}>{r.dt}</td>
+                    <td style={{ padding: 10, whiteSpace: "nowrap" }}>{r.symbol}</td>
+                    <td style={{ padding: 10, whiteSpace: "nowrap" }}>{r.timeframe}</td>
+                    <td style={{ padding: 10, fontFamily: "monospace" }}>{r.run_id}</td>
+                    <td style={{ padding: 10, whiteSpace: "nowrap" }}>{r.pipeline_status}</td>
+
+                    <td style={{ padding: 10, whiteSpace: "nowrap" }}>
+                      {canOpen ? (
+                        <button onClick={() => handleOpenLinkedNote(linked)} style={{ padding: "6px 10px", borderRadius: 10 }}>
+                          Open #{linked}
+                        </button>
+                      ) : (
+                        <span style={{ opacity: 0.6 }}>—</span>
+                      )}
+                    </td>
+
+                    <td style={{ padding: 10, whiteSpace: "nowrap" }}>{r.created_at}</td>
+                  </tr>
+                );
+              })}
+
               {!loading && !error && items.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ padding: 14, opacity: 0.75 }}>
+                  <td colSpan={7} style={{ padding: 14, opacity: 0.75 }}>
                     No runs found.
                   </td>
                 </tr>

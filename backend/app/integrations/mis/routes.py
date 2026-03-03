@@ -24,6 +24,8 @@ class MISIngestRequest(BaseModel):
 class ExternalRunOut(BaseModel):
     id: UUID
     user_id: int
+    linked_note_id: Optional[int] = None
+
     source_system: str
     run_id: str
     dt: date
@@ -104,6 +106,7 @@ def mis_ingest(
             raw_payload=body.run_manifest,
         )
         db.add(record)
+        db.flush()  # ✅ IMPORTANT: ensure record.id exists before using it in Note
 
         note = NoteModel(
             title=f"MIS Run {run_id}",
@@ -177,7 +180,6 @@ def list_runs(
             filters.append(ExternalRun.dt <= dt_to)
 
         base_q = db.query(ExternalRun).filter(and_(*filters))
-
         total = base_q.count()
 
         if order_lower == "desc":
@@ -187,8 +189,27 @@ def list_runs(
 
         items = base_q.offset(offset).limit(limit).all()
 
+        run_ids = [r.id for r in items]
+        note_map = {}
+        if run_ids:
+            rows = (
+                db.query(NoteModel.id, NoteModel.external_run_id)
+                .filter(
+                    NoteModel.user_id == current_user.id,
+                    NoteModel.external_run_id.in_(run_ids),
+                )
+                .all()
+            )
+            note_map = {external_run_id: note_id for (note_id, external_run_id) in rows}
+
+        out_items = []
+        for r in items:
+            data = ExternalRunOut.model_validate(r).model_dump()
+            data["linked_note_id"] = note_map.get(r.id)
+            out_items.append(data)
+
         return {
-            "items": items,
+            "items": out_items,
             "total": total,
             "limit": limit,
             "offset": offset,

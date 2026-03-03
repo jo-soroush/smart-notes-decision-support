@@ -15,7 +15,13 @@ function App() {
 
   function handleLogout() {
     localStorage.removeItem("token");
+    localStorage.removeItem("open_note_id");
     setToken("");
+    setView("home");
+  }
+
+  // ✅ when MIS clicks "Open #<id>", switch back to Home
+  function handleOpenNoteFromMis() {
     setView("home");
   }
 
@@ -23,7 +29,12 @@ function App() {
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
-      <Header isLoggedIn={isLoggedIn} onLogout={handleLogout} view={view} onChangeView={setView} />
+      <Header
+        isLoggedIn={isLoggedIn}
+        onLogout={handleLogout}
+        view={view}
+        onChangeView={setView}
+      />
 
       <div style={{ flex: 1, minHeight: 0 }}>
         {!isLoggedIn ? (
@@ -31,7 +42,7 @@ function App() {
         ) : view === "home" ? (
           <HomePage />
         ) : (
-          <MisRunsPage />
+          <MisRunsPage onOpenNote={handleOpenNoteFromMis} />
         )}
       </div>
     </div>
