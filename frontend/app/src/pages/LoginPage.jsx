@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { apiFetch } from "../lib/api";
 
 function LoginPage({ onLogin }) {
   const [email, setEmail] = useState("test1@example.com");
@@ -17,7 +18,7 @@ function LoginPage({ onLogin }) {
       form.set("username", email);
       form.set("password", password);
 
-      const res = await fetch("http://127.0.0.1:8000/auth/login", {
+      const res = await apiFetch("/auth/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",

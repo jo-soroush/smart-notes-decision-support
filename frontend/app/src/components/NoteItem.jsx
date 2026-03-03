@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiFetch } from "../lib/api";
 
 function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
   const [title, setTitle] = useState(note?.title ?? "");
@@ -13,14 +14,6 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
     setFolderId(note?.folder_id ? String(note.folder_id) : "");
   }, [note?.id]);
 
-  function getAuthHeaders(extra = {}) {
-    const token = localStorage.getItem("token");
-    return {
-      ...extra,
-      Authorization: `Bearer ${token}`,
-    };
-  }
-
   if (!note) {
     return <div style={{ padding: 24, opacity: 0.75 }}>Select a note…</div>;
   }
@@ -34,9 +27,11 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
     };
 
     try {
-      const res = await fetch(`http://127.0.0.1:8000/notes/${note.id}`, {
+      const token = localStorage.getItem("token");
+      const res = await apiFetch(`/notes/${note.id}`, {
         method: "PUT",
-        headers: getAuthHeaders({ "Content-Type": "application/json" }),
+        token,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
@@ -58,9 +53,10 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
     if (!ok) return;
 
     try {
-      const res = await fetch(`http://127.0.0.1:8000/notes/${note.id}`, {
+      const token = localStorage.getItem("token");
+      const res = await apiFetch(`/notes/${note.id}`, {
         method: "DELETE",
-        headers: getAuthHeaders(),
+        token,
       });
 
       if (!res.ok) {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { apiFetch } from "../lib/api";
 
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
@@ -76,7 +77,8 @@ function AiPanel({ noteId }) {
           action_type: "summary",
         });
 
-        const res = await fetch(`http://127.0.0.1:8000/ai/results/latest?${params.toString()}`);
+        const token = localStorage.getItem("token");
+        const res = await apiFetch(`/ai/results/latest?${params.toString()}`, { token });
 
         if (res.status === 404) {
           if (!ignore) setSummary(null);
@@ -110,8 +112,10 @@ function AiPanel({ noteId }) {
     setSummaryError(null);
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/ai/jobs", {
+      const token = localStorage.getItem("token");
+      const res = await apiFetch("/ai/jobs", {
         method: "POST",
+        token,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           note_id: noteId,

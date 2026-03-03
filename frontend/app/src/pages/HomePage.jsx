@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import NotesList from "../components/NotesList";
 import NoteItem from "../components/NoteItem";
 import AiPanel from "../components/AiPanel";
-
-const API_BASE = "http://127.0.0.1:8000";
+import { apiFetch } from "../lib/api";
 
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
@@ -46,17 +45,8 @@ function HomePage() {
     setPage(1);
   }, [debouncedSearch, folderFilterId]);
 
-  function getAuthHeaders(extra = {}) {
-    const token = localStorage.getItem("token");
-    return {
-      ...extra,
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
-  }
-
   function handleUnauthorized(res) {
     if (res.status === 401) {
-      // Token is missing/expired/invalid -> clear it so UI can react later if you add login routing
       localStorage.removeItem("token");
     }
   }
@@ -99,9 +89,8 @@ function HomePage() {
 
   async function loadFolders() {
     try {
-      const res = await fetch(`${API_BASE}/folders/with_counts`, {
-        headers: getAuthHeaders(),
-      });
+      const token = localStorage.getItem("token");
+      const res = await apiFetch("/folders/with_counts", { token });
 
       if (!res.ok) {
         handleUnauthorized(res);
@@ -128,9 +117,10 @@ function HomePage() {
       if (debouncedSearch) params.set("search", debouncedSearch);
       if (folderFilterId) params.set("folder_id", folderFilterId);
 
-      const res = await fetch(`${API_BASE}/notes?${params.toString()}`, {
+      const token = localStorage.getItem("token");
+      const res = await apiFetch(`/notes?${params.toString()}`, {
+        token,
         signal: controller.signal,
-        headers: getAuthHeaders(),
       });
 
       if (!res.ok) {
@@ -181,9 +171,11 @@ function HomePage() {
     };
 
     try {
-      const res = await fetch(`${API_BASE}/notes`, {
+      const token = localStorage.getItem("token");
+      const res = await apiFetch("/notes", {
         method: "POST",
-        headers: getAuthHeaders({ "Content-Type": "application/json" }),
+        token,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
@@ -195,7 +187,6 @@ function HomePage() {
 
       const created = await res.json();
 
-      // keep behaviour similar to your original version
       if (page === 1 && !debouncedSearch) {
         setNotes((prev) => [created, ...prev]);
         setTotal((t) => t + 1);
@@ -219,9 +210,11 @@ function HomePage() {
     if (!name) return;
 
     try {
-      const res = await fetch(`${API_BASE}/folders`, {
+      const token = localStorage.getItem("token");
+      const res = await apiFetch("/folders", {
         method: "POST",
-        headers: getAuthHeaders({ "Content-Type": "application/json" }),
+        token,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
 
