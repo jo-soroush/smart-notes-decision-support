@@ -41,7 +41,11 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
       }
 
       const updated = await res.json();
+
+      // ✅ this is the important line
       if (onUpdate) onUpdate(updated);
+
+      // optional compatibility
       if (onRefresh) onRefresh();
     } catch (err) {
       console.error("Failed to update note:", err);
