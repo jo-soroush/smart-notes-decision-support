@@ -42,10 +42,10 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
 
       const updated = await res.json();
 
-      // ✅ this is the important line
+      // ✅ update HomePage immediately
       if (onUpdate) onUpdate(updated);
 
-      // optional compatibility
+      // optional (kept for compatibility if used elsewhere)
       if (onRefresh) onRefresh();
     } catch (err) {
       console.error("Failed to update note:", err);

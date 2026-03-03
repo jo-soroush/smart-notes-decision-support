@@ -76,10 +76,15 @@ function MisRunsPage({ onOpenNote }) {
   function handleOpenLinkedNote(linkedNoteId) {
     if (!linkedNoteId) return;
 
-    // ✅ key: tell HomePage which note to open
-    localStorage.setItem("open_note_id", String(linkedNoteId));
+    const idStr = String(linkedNoteId);
 
-    // ✅ then switch view back to home (App.jsx provided this)
+    // 1) store it
+    localStorage.setItem("open_note_id", idStr);
+
+    // 2) ALSO emit an event so HomePage can react even if it doesn't remount
+    window.dispatchEvent(new CustomEvent("smartnotes:open-note", { detail: { noteId: Number(linkedNoteId) } }));
+
+    // 3) switch to home
     if (onOpenNote) onOpenNote();
   }
 
@@ -94,7 +99,6 @@ function MisRunsPage({ onOpenNote }) {
         </div>
       </div>
 
-      {/* Controls */}
       <div
         style={{
           marginTop: 12,
@@ -152,7 +156,6 @@ function MisRunsPage({ onOpenNote }) {
         </div>
       </div>
 
-      {/* States */}
       {loading ? <div style={{ marginTop: 12, opacity: 0.8 }}>Loading…</div> : null}
       {error ? (
         <div style={{ marginTop: 12, color: "tomato", whiteSpace: "pre-wrap" }}>
@@ -160,7 +163,6 @@ function MisRunsPage({ onOpenNote }) {
         </div>
       ) : null}
 
-      {/* Table */}
       <div style={{ marginTop: 12, borderRadius: 12, overflow: "hidden", border: "1px solid rgba(255,255,255,0.10)" }}>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>

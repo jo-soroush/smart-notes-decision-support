@@ -29,6 +29,8 @@ function HomePage() {
 
   // ✅ MIS pin (so loadNotes doesn't wipe the opened note out of state)
   const misPinnedNoteRef = useRef(null);
+  const misPinnedNoteIdRef = useRef(null);
+  const openingFromMisRef = useRef(false);
 
   const [aiWidth] = useState(() => {
     const saved = Number(localStorage.getItem("aiPanelWidth") || 360);
@@ -42,6 +44,9 @@ function HomePage() {
   async function openNoteById(noteId) {
     const want = Number(noteId);
     if (!Number.isFinite(want)) return;
+
+    openingFromMisRef.current = true;
+    misPinnedNoteIdRef.current = want;
 
     try {
       const token = getToken();
@@ -66,7 +71,6 @@ function HomePage() {
     }
   }
 
-  // ✅ OPEN NOTE FROM MIS
   useEffect(() => {
     const pending = localStorage.getItem("open_note_id");
     if (!pending) return;
@@ -75,7 +79,6 @@ function HomePage() {
     openNoteById(pending);
   }, []);
 
-  // SEARCH debounce
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 400);
     return () => clearTimeout(t);
@@ -124,7 +127,6 @@ function HomePage() {
       const data = await res.json();
       let items = data.items ?? [];
 
-      // keep MIS-opened note visible even if not in current page
       const pinned = misPinnedNoteRef.current;
       if (pinned && !items.some((n) => n.id === pinned.id)) {
         items = [pinned, ...items];
@@ -134,11 +136,15 @@ function HomePage() {
       setPages(data.pages ?? 0);
       setTotal(data.total ?? 0);
 
-      // only auto-select if nothing selected
       setSelectedId((prev) => {
+        const pinnedId = misPinnedNoteIdRef.current;
+        if (pinnedId) return pinnedId;
+
         if (prev) return prev;
         return items.length > 0 ? items[0].id : null;
       });
+
+      openingFromMisRef.current = false;
     } catch (err) {
       if (err?.name !== "AbortError") console.error(err);
     }
@@ -152,23 +158,30 @@ function HomePage() {
     loadNotes();
   }, [page, limit, debouncedSearch, folderFilterId]);
 
-  // ✅ ONLY FIX for Save: update state immediately
+  // ✅ NEW: instant UI sync after Save (no manual refresh needed)
   function handleNoteUpdate(updated) {
     if (!updated?.id) return;
 
-    // update pinned note too (if it was the MIS opened one)
-    if (misPinnedNoteRef.current?.id === updated.id) {
-      misPinnedNoteRef.current = updated;
-    }
+    // keep pinned note updated too
+    misPinnedNoteRef.current = updated;
+    misPinnedNoteIdRef.current = updated.id;
 
-    setNotes((prev) =>
-      prev.map((n) => (n.id === updated.id ? updated : n))
-    );
+    setNotes((prev) => {
+      const exists = prev.some((n) => n.id === updated.id);
+      const next = exists ? prev.map((n) => (n.id === updated.id ? updated : n)) : [updated, ...prev];
+      return next;
+    });
+
+    setSelectedId(updated.id);
+
+    // update sidebar counts if folder/status changed
+    loadFolders();
   }
 
   async function handleCreateNote() {
     try {
       const token = getToken();
+
       const fallbackStatus = notes.length > 0 ? notes[0].status : "draft";
 
       const payload = {
@@ -191,6 +204,9 @@ function HomePage() {
       }
 
       const created = await res.json();
+
+      misPinnedNoteRef.current = created;
+      misPinnedNoteIdRef.current = created.id;
 
       setNotes((prev) => [created, ...prev]);
       setSelectedId(created.id);
@@ -273,7 +289,15 @@ function HomePage() {
 
         <NotesList notes={notes} folders={folders} selectedId={selectedId} onSelect={setSelectedId} />
 
-        <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <div
+          style={{
+            marginTop: 12,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
           <small>
             Page {page}/{pages || 1} • Total {total}
           </small>
