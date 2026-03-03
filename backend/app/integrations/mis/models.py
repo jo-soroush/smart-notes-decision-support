@@ -2,7 +2,15 @@ import uuid
 from datetime import date, datetime
 
 from app.models.base import Base
-from sqlalchemy import Date, DateTime, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -14,6 +22,14 @@ class ExternalRun(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
     source_system: Mapped[str] = mapped_column(String(50), nullable=False)
     run_id: Mapped[str] = mapped_column(String(100), nullable=False)
     dt: Mapped[date] = mapped_column(Date, nullable=False)
