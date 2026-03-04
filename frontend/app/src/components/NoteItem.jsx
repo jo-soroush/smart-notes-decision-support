@@ -18,6 +18,9 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
     return <div style={{ padding: 24, opacity: 0.75 }}>Select a note…</div>;
   }
 
+  const hasMisLink = Boolean(note?.external_run_id) || Boolean(note?.source_system);
+  const shortExternalRunId = note?.external_run_id ? String(note.external_run_id).slice(0, 8) : null;
+
   async function handleSave() {
     const payload = {
       title: title.trim(),
@@ -80,6 +83,35 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
 
   return (
     <div style={{ padding: 24, minHeight: 0 }}>
+      {hasMisLink ? (
+        <div style={{ marginBottom: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "6px 10px",
+              borderRadius: 999,
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: 0.2,
+              border: "1px solid rgba(255,255,255,0.14)",
+              background: "rgba(255,255,255,0.04)",
+            }}
+            title={
+              note?.external_run_id
+                ? `external_run_id: ${String(note.external_run_id)}`
+                : note?.source_system
+                  ? `source_system: ${String(note.source_system)}`
+                  : ""
+            }
+          >
+            {String(note?.source_system || "MIS").toUpperCase()} LINKED
+            {shortExternalRunId ? <span style={{ opacity: 0.75 }}>• {shortExternalRunId}</span> : null}
+          </span>
+        </div>
+      ) : null}
+
       <input
         value={title}
         onChange={(e) => setTitle(e.target.value)}

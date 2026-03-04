@@ -84,10 +84,28 @@ def generate_with_gemini(action_type: str, input_text: str) -> tuple[str, str]:
             "Return bullet points.\n\n"
             f"{input_text}"
         )
+    elif action_type == "mis_analysis":
+        prompt = (
+            "You are a decision-support assistant. Analyze the NOTE and the MIS Run Context (if present). "
+            "Return EXACTLY the following 5 sections, in this exact order, each on its own heading line:\n\n"
+            "Market Context:\n"
+            "- 2-4 short sentences about market regime/conditions implied by the context.\n\n"
+            "Signal Interpretation:\n"
+            "- 3-6 bullet points interpreting the MIS run signals and what they mean.\n\n"
+            "Risk Level:\n"
+            "- One of: Low / Medium / High.\n"
+            "- 2-4 bullet points explaining the main risks.\n\n"
+            "Suggested Action:\n"
+            "- One clear action: Buy / Sell / Hold / Wait / Need More Data.\n"
+            "- 2-4 bullets explaining why and what to watch next.\n\n"
+            "Confidence:\n"
+            "- A single percentage 0-100%.\n"
+            "- One short sentence explaining what limits confidence.\n\n"
+            "Keep it concise. Do not add any extra sections or preamble.\n\n"
+            f"{input_text}"
+        )
     else:
         raise ValueError("Invalid action type")
 
     result = call_gemini(prompt)
     return result.strip(), MODEL_NAME
-
-
