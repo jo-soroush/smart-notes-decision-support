@@ -112,15 +112,9 @@ function AiPanel({ noteId, isMisLinked = false }) {
     }
 
     async function loadMisAnalysisFromDB() {
-      // If the note is not MIS-linked, we do not even try to load MIS analysis.
-      if (!isMisLinked) {
-        if (!ignore) {
-          setMisAnalysis(null);
-          setMisAnalysisError(null);
-        }
-        return;
-      }
-
+      // IMPORTANT:
+      // Always try to load cached MIS analysis from DB.
+      // (Even if UI thinks the note isn't MIS-linked, we still want to show saved results.)
       try {
         const params = new URLSearchParams({
           note_id: String(noteId),
@@ -161,7 +155,7 @@ function AiPanel({ noteId, isMisLinked = false }) {
     return () => {
       ignore = true;
     };
-  }, [noteId, isMisLinked]);
+  }, [noteId]);
 
   async function handleGenerateSummary() {
     if (!noteId) return;
@@ -200,8 +194,9 @@ function AiPanel({ noteId, isMisLinked = false }) {
 
   async function handleGenerateMisAnalysis() {
     if (!noteId) return;
-    // FIX: allow user to generate MIS analysis even if frontend did not mark it MIS-linked.
-    // Backend/prompt can still decide what to do. UI should not hard-block.
+    // IMPORTANT:
+    // Generate MIS analysis ONLY if note is MIS-linked.
+    if (!isMisLinked) return;
     if (misAnalysis) return; // already exists => avoid extra cost
 
     setLoadingMisAnalysis(true);
@@ -239,8 +234,9 @@ function AiPanel({ noteId, isMisLinked = false }) {
   const disableGenerateSummary = !noteId || loadingSummary || hasSummary;
 
   const hasMisAnalysis = !!misAnalysis;
-  // FIX: do not disable just because isMisLinked is false.
-  const disableGenerateMisAnalysis = !noteId || loadingMisAnalysis || hasMisAnalysis;
+  // IMPORTANT:
+  // Disable generate unless MIS-linked; BUT still show cached analysis if it exists.
+  const disableGenerateMisAnalysis = !noteId || !isMisLinked || loadingMisAnalysis || hasMisAnalysis;
 
   return (
     <div
@@ -329,11 +325,23 @@ function AiPanel({ noteId, isMisLinked = false }) {
           onClick={handleGenerateMisAnalysis}
           disabled={disableGenerateMisAnalysis}
           style={{ padding: "8px 10px", borderRadius: 10 }}
-          title={hasMisAnalysis ? "MIS analysis already exists for this note." : ""}
+          title={
+            !isMisLinked
+              ? "MIS analysis is available only for MIS-linked notes."
+              : hasMisAnalysis
+                ? "MIS analysis already exists for this note."
+                : ""
+          }
         >
           {loadingMisAnalysis ? "Generating..." : hasMisAnalysis ? "Ready" : "Generate"}
         </button>
       </div>
+
+      {!isMisLinked && noteId ? (
+        <p style={{ marginTop: 12, marginBottom: 0, opacity: 0.75, fontSize: 13 }}>
+          MIS analysis is available only for MIS-linked notes.
+        </p>
+      ) : null}
 
       {misAnalysisError ? (
         <p style={{ color: "tomato", marginTop: 12, marginBottom: 0, whiteSpace: "pre-wrap" }}>
@@ -359,7 +367,7 @@ function AiPanel({ noteId, isMisLinked = false }) {
         </div>
       ) : null}
 
-      {noteId && !misAnalysis && !misAnalysisError ? (
+      {noteId && isMisLinked && !misAnalysis && !misAnalysisError ? (
         <p style={{ marginTop: 12, marginBottom: 0, opacity: 0.75, fontSize: 13 }}>
           No MIS analysis yet. Click “Generate”.
         </p>
