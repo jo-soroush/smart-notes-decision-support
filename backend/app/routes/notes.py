@@ -25,10 +25,14 @@ def get_notes(
     search: str | None = Query(default=None),
     status: str | None = Query(default=None),
     folder_id: int | None = Query(default=None),
+    exclude_type: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=10, ge=1, le=100),
 ):
     query = db.query(NoteModel).filter(NoteModel.user_id == current_user.id)
+
+    if exclude_type:
+        query = query.filter(or_(NoteModel.type.is_(None), NoteModel.type != exclude_type))
 
     if status:
         query = query.filter(NoteModel.status == status)

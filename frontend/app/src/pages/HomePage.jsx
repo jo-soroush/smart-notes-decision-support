@@ -114,6 +114,7 @@ function HomePage() {
       const params = new URLSearchParams();
       params.set("page", String(page));
       params.set("limit", String(limit));
+      params.set("exclude_type", "external_mis");
       if (debouncedSearch) params.set("search", debouncedSearch);
       if (folderFilterId) params.set("folder_id", folderFilterId);
 
