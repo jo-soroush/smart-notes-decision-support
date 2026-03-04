@@ -48,12 +48,7 @@ def get_notes(
     total = query.count()
     offset = (page - 1) * limit
 
-    items = (
-        query.order_by(NoteModel.id.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
+    items = query.order_by(NoteModel.id.desc()).offset(offset).limit(limit).all()
 
     pages = math.ceil(total / limit) if total > 0 else 0
 
@@ -64,6 +59,22 @@ def get_notes(
         limit=limit,
         pages=pages,
     )
+
+
+@router.get("/{note_id}", response_model=Note)
+def get_note(
+    note_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    db_note = (
+        db.query(NoteModel)
+        .filter(NoteModel.id == note_id, NoteModel.user_id == current_user.id)
+        .first()
+    )
+    if db_note is None:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return db_note
 
 
 @router.post("", response_model=Note)

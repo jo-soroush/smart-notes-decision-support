@@ -5,7 +5,7 @@ function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
-function AiPanel({ noteId }) {
+function AiPanel({ noteId, isMisLinked = false }) {
   const [summary, setSummary] = useState(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [summaryError, setSummaryError] = useState(null);
@@ -14,7 +14,7 @@ function AiPanel({ noteId }) {
   const [loadingMisAnalysis, setLoadingMisAnalysis] = useState(false);
   const [misAnalysisError, setMisAnalysisError] = useState(null);
 
-  // ---- resizable summary box (vertical) ----
+  // Resizable summary box (vertical)
   const isResizingRef = useRef(false);
   const startYRef = useRef(0);
   const startHRef = useRef(0);
@@ -60,7 +60,6 @@ function AiPanel({ noteId }) {
       window.removeEventListener("mouseup", onUp);
     };
   }, [summaryHeight]);
-  // -----------------------------------------
 
   useEffect(() => {
     if (!noteId) {
@@ -78,8 +77,6 @@ function AiPanel({ noteId }) {
     let ignore = false;
 
     async function loadSummaryFromDB() {
-      setSummaryError(null);
-
       try {
         const params = new URLSearchParams({
           note_id: String(noteId),
@@ -89,8 +86,12 @@ function AiPanel({ noteId }) {
         const token = localStorage.getItem("token");
         const res = await apiFetch(`/ai/results/latest?${params.toString()}`, { token });
 
+        // 404 is normal (no summary yet) => silent
         if (res.status === 404) {
-          if (!ignore) setSummary(null);
+          if (!ignore) {
+            setSummary(null);
+            setSummaryError(null);
+          }
           return;
         }
 
@@ -101,14 +102,24 @@ function AiPanel({ noteId }) {
         }
 
         const data = await res.json();
-        if (!ignore) setSummary(data?.result_text ?? null);
+        if (!ignore) {
+          setSummary(data?.result_text ?? null);
+          setSummaryError(null);
+        }
       } catch (e) {
         if (!ignore) setSummaryError("Load summary failed (network/server).");
       }
     }
 
     async function loadMisAnalysisFromDB() {
-      setMisAnalysisError(null);
+      // If the note is not MIS-linked, we do not even try to load MIS analysis.
+      if (!isMisLinked) {
+        if (!ignore) {
+          setMisAnalysis(null);
+          setMisAnalysisError(null);
+        }
+        return;
+      }
 
       try {
         const params = new URLSearchParams({
@@ -119,8 +130,12 @@ function AiPanel({ noteId }) {
         const token = localStorage.getItem("token");
         const res = await apiFetch(`/ai/results/latest?${params.toString()}`, { token });
 
+        // 404 is normal (no analysis yet) => silent
         if (res.status === 404) {
-          if (!ignore) setMisAnalysis(null);
+          if (!ignore) {
+            setMisAnalysis(null);
+            setMisAnalysisError(null);
+          }
           return;
         }
 
@@ -131,7 +146,10 @@ function AiPanel({ noteId }) {
         }
 
         const data = await res.json();
-        if (!ignore) setMisAnalysis(data?.result_text ?? null);
+        if (!ignore) {
+          setMisAnalysis(data?.result_text ?? null);
+          setMisAnalysisError(null);
+        }
       } catch (e) {
         if (!ignore) setMisAnalysisError("Load MIS analysis failed (network/server).");
       }
@@ -143,11 +161,11 @@ function AiPanel({ noteId }) {
     return () => {
       ignore = true;
     };
-  }, [noteId]);
+  }, [noteId, isMisLinked]);
 
   async function handleGenerateSummary() {
     if (!noteId) return;
-    if (summary) return; // ✅ already exists => avoid extra cost
+    if (summary) return; // already exists => avoid extra cost
 
     setLoadingSummary(true);
     setSummaryError(null);
@@ -172,6 +190,7 @@ function AiPanel({ noteId }) {
 
       const data = await res.json();
       setSummary(data?.result_text ?? null);
+      setSummaryError(null);
     } catch (err) {
       setSummaryError("Failed to generate summary (network/server).");
     } finally {
@@ -181,7 +200,9 @@ function AiPanel({ noteId }) {
 
   async function handleGenerateMisAnalysis() {
     if (!noteId) return;
-    if (misAnalysis) return; // ✅ already exists => avoid extra cost
+    // FIX: allow user to generate MIS analysis even if frontend did not mark it MIS-linked.
+    // Backend/prompt can still decide what to do. UI should not hard-block.
+    if (misAnalysis) return; // already exists => avoid extra cost
 
     setLoadingMisAnalysis(true);
     setMisAnalysisError(null);
@@ -206,6 +227,7 @@ function AiPanel({ noteId }) {
 
       const data = await res.json();
       setMisAnalysis(data?.result_text ?? null);
+      setMisAnalysisError(null);
     } catch (err) {
       setMisAnalysisError("Failed to generate MIS analysis (network/server).");
     } finally {
@@ -217,6 +239,7 @@ function AiPanel({ noteId }) {
   const disableGenerateSummary = !noteId || loadingSummary || hasSummary;
 
   const hasMisAnalysis = !!misAnalysis;
+  // FIX: do not disable just because isMisLinked is false.
   const disableGenerateMisAnalysis = !noteId || loadingMisAnalysis || hasMisAnalysis;
 
   return (
@@ -269,18 +292,10 @@ function AiPanel({ noteId }) {
         >
           <div style={{ padding: 12, fontWeight: 800 }}>AI Summary</div>
 
-          {/* Resizable content area */}
-          <div
-            style={{
-              height: summaryHeight,
-              padding: "0 12px 12px 12px",
-              overflow: "auto",
-            }}
-          >
+          <div style={{ height: summaryHeight, padding: "0 12px 12px 12px", overflow: "auto" }}>
             <div style={{ whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.6 }}>{summary}</div>
           </div>
 
-          {/* Drag handle (vertical) */}
           <div
             onMouseDown={startResizeSummary}
             title="Drag to resize"
@@ -338,13 +353,7 @@ function AiPanel({ noteId }) {
         >
           <div style={{ padding: 12, fontWeight: 800 }}>MIS Analysis</div>
 
-          <div
-            style={{
-              padding: "0 12px 12px 12px",
-              overflow: "auto",
-              maxHeight: 520,
-            }}
-          >
+          <div style={{ padding: "0 12px 12px 12px", overflow: "auto", maxHeight: 520 }}>
             <div style={{ whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.6 }}>{misAnalysis}</div>
           </div>
         </div>

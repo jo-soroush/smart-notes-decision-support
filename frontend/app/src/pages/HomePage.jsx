@@ -27,10 +27,9 @@ function HomePage() {
   const abortRef = useRef(null);
   const rootRef = useRef(null);
 
-  // ✅ MIS pin (so loadNotes doesn't wipe the opened note out of state)
+  // Keep a pinned note available even if it is not in the current page results
   const misPinnedNoteRef = useRef(null);
   const misPinnedNoteIdRef = useRef(null);
-  const openingFromMisRef = useRef(false);
 
   const [aiWidth] = useState(() => {
     const saved = Number(localStorage.getItem("aiPanelWidth") || 360);
@@ -45,20 +44,23 @@ function HomePage() {
     const want = Number(noteId);
     if (!Number.isFinite(want)) return;
 
-    openingFromMisRef.current = true;
-    misPinnedNoteIdRef.current = want;
-
     try {
       const token = getToken();
       const res = await apiFetch(`/notes/${want}`, { token });
 
       if (!res.ok) {
-        console.error("Failed to fetch note directly:", await res.text());
+        console.error("Failed to fetch note directly:", res.status, await res.text());
+        // Do not force-select an id that we could not load
+        misPinnedNoteIdRef.current = null;
+        misPinnedNoteRef.current = null;
         return;
       }
 
       const note = await res.json();
+
+      // Only pin after successful fetch
       misPinnedNoteRef.current = note;
+      misPinnedNoteIdRef.current = note.id;
 
       setNotes((prev) => {
         const exists = prev.some((n) => n.id === note.id);
@@ -68,6 +70,8 @@ function HomePage() {
       setSelectedId(note.id);
     } catch (e) {
       console.error("Open note error:", e);
+      misPinnedNoteIdRef.current = null;
+      misPinnedNoteRef.current = null;
     }
   }
 
@@ -127,6 +131,7 @@ function HomePage() {
       const data = await res.json();
       let items = data.items ?? [];
 
+      // Keep pinned note visible if it is not in the current page results
       const pinned = misPinnedNoteRef.current;
       if (pinned && !items.some((n) => n.id === pinned.id)) {
         items = [pinned, ...items];
@@ -136,15 +141,16 @@ function HomePage() {
       setPages(data.pages ?? 0);
       setTotal(data.total ?? 0);
 
+      // Select priority:
+      // 1) If pinned note exists in memory, select it
+      // 2) Else keep current selection if it exists in items
+      // 3) Else select first item
       setSelectedId((prev) => {
         const pinnedId = misPinnedNoteIdRef.current;
-        if (pinnedId) return pinnedId;
-
-        if (prev) return prev;
+        if (pinnedId && items.some((n) => n.id === pinnedId)) return pinnedId;
+        if (prev && items.some((n) => n.id === prev)) return prev;
         return items.length > 0 ? items[0].id : null;
       });
-
-      openingFromMisRef.current = false;
     } catch (err) {
       if (err?.name !== "AbortError") console.error(err);
     }
@@ -158,32 +164,27 @@ function HomePage() {
     loadNotes();
   }, [page, limit, debouncedSearch, folderFilterId]);
 
-  // ✅ instant UI sync after Save (no manual refresh needed)
   function handleNoteUpdate(updated) {
     if (!updated?.id) return;
 
-    // keep pinned note updated too
-    misPinnedNoteRef.current = updated;
-    misPinnedNoteIdRef.current = updated.id;
+    // Keep pinned note updated too
+    if (misPinnedNoteIdRef.current === updated.id) {
+      misPinnedNoteRef.current = updated;
+    }
 
     setNotes((prev) => {
       const exists = prev.some((n) => n.id === updated.id);
-      const next = exists ? prev.map((n) => (n.id === updated.id ? updated : n)) : [updated, ...prev];
-      return next;
+      return exists ? prev.map((n) => (n.id === updated.id ? updated : n)) : [updated, ...prev];
     });
 
     setSelectedId(updated.id);
-
-    // update sidebar counts if folder/status changed
     loadFolders();
   }
 
-  // ✅ NEW: instant UI sync after Delete (no manual refresh needed)
   function handleNoteDelete(deletedId) {
     const id = Number(deletedId);
     if (!Number.isFinite(id)) return;
 
-    // اگر نوت حذف شده همون pinned بود، پاکش کن
     if (misPinnedNoteIdRef.current === id) {
       misPinnedNoteIdRef.current = null;
       misPinnedNoteRef.current = null;
@@ -192,7 +193,6 @@ function HomePage() {
     setNotes((prev) => {
       const next = prev.filter((n) => n.id !== id);
 
-      // اگر همون نوت انتخاب شده حذف شد، انتخاب رو ببر روی اولین نوت باقی‌مونده
       setSelectedId((cur) => {
         if (cur !== id) return cur;
         return next.length > 0 ? next[0].id : null;
@@ -201,7 +201,6 @@ function HomePage() {
       return next;
     });
 
-    // counts + pagination درست بشه
     loadFolders();
     loadNotes();
   }
@@ -209,7 +208,6 @@ function HomePage() {
   async function handleCreateNote() {
     try {
       const token = getToken();
-
       const fallbackStatus = notes.length > 0 ? notes[0].status : "draft";
 
       const payload = {
@@ -233,6 +231,7 @@ function HomePage() {
 
       const created = await res.json();
 
+      // Pin the newly created note
       misPinnedNoteRef.current = created;
       misPinnedNoteIdRef.current = created.id;
 
@@ -317,15 +316,7 @@ function HomePage() {
 
         <NotesList notes={notes} folders={folders} selectedId={selectedId} onSelect={setSelectedId} />
 
-        <div
-          style={{
-            marginTop: 12,
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
+        <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
           <small>
             Page {page}/{pages || 1} • Total {total}
           </small>
@@ -354,16 +345,11 @@ function HomePage() {
       </div>
 
       <div style={{ flex: 1, minWidth: 0, overflow: "auto" }}>
-        <NoteItem
-          note={selectedNote}
-          folders={folders}
-          onUpdate={handleNoteUpdate}
-          onDelete={handleNoteDelete}
-        />
+        <NoteItem note={selectedNote} folders={folders} onUpdate={handleNoteUpdate} onDelete={handleNoteDelete} />
       </div>
 
       <div style={{ width: aiWidth }}>
-        <AiPanel noteId={selectedId} />
+        <AiPanel noteId={selectedId} note={selectedNote} />
       </div>
     </div>
   );
