@@ -1,4 +1,5 @@
 from app.db import get_db
+from app.integrations.mis.models import ExternalRun
 from app.models.ai_result import AiResult
 from app.models.note import NoteModel
 from app.schemas.ai import AiJobCreate, AiJobResponse
@@ -34,7 +35,17 @@ def run_ai_job(job: AiJobCreate, db: Session = Depends(get_db)):
             created_at=cached.created_at,
         )
 
-    input_text = build_input_text(note)
+    external_run = None
+    if note.external_run_id is not None:
+        external_run = (
+            db.query(ExternalRun)
+            .filter(
+                ExternalRun.id == note.external_run_id,
+                ExternalRun.user_id == note.user_id,
+            )
+            .first()
+        )
+    input_text = build_input_text(note, external_run=external_run)
 
     try:
         result_text, model_name = generate_with_gemini(job.action_type, input_text)

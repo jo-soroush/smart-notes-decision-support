@@ -47,9 +47,25 @@ def create_result(
     return row
 
 
-def build_input_text(note: NoteModel) -> str:
+def build_input_text(note: NoteModel, external_run=None) -> str:
     """Build the text sent to the AI model based on note fields."""
-    return f"Title: {note.title}\n\nContent:\n{note.content}"
+    text = f"Title: {note.title}\n\nContent:\n{note.content}"
+
+    if external_run is not None:
+        text += (
+            "\n\nMIS Run Context:"
+            f"\n  run_id: {external_run.run_id}"
+            f"\n  symbol: {external_run.symbol}"
+            f"\n  timeframe: {external_run.timeframe}"
+            f"\n  dt: {external_run.dt}"
+            f"\n  market_flag: {external_run.market_flag}"
+            f"\n  risk_mode: {external_run.risk_mode}"
+            f"\n  pipeline_status: {external_run.pipeline_status}"
+            f"\n  manifest_path: {external_run.manifest_path}"
+            f"\n  raw_payload: {'present' if external_run.raw_payload is not None else 'absent'}"
+        )
+
+    return text
 
 
 def generate_with_gemini(action_type: str, input_text: str) -> tuple[str, str]:
