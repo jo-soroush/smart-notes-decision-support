@@ -68,8 +68,11 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
         return;
       }
 
+      // ✅ notify HomePage to remove it from state immediately
       if (onDelete) onDelete(note.id);
-      if (onRefresh) onRefresh();
+
+      // ❌ do NOT force refresh; HomePage state is the source of truth now
+      // if (onRefresh) onRefresh();
     } catch (err) {
       console.error("Failed to delete note:", err);
     }

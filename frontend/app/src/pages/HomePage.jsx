@@ -158,7 +158,7 @@ function HomePage() {
     loadNotes();
   }, [page, limit, debouncedSearch, folderFilterId]);
 
-  // ✅ NEW: instant UI sync after Save (no manual refresh needed)
+  // ✅ instant UI sync after Save (no manual refresh needed)
   function handleNoteUpdate(updated) {
     if (!updated?.id) return;
 
@@ -176,6 +176,34 @@ function HomePage() {
 
     // update sidebar counts if folder/status changed
     loadFolders();
+  }
+
+  // ✅ NEW: instant UI sync after Delete (no manual refresh needed)
+  function handleNoteDelete(deletedId) {
+    const id = Number(deletedId);
+    if (!Number.isFinite(id)) return;
+
+    // اگر نوت حذف شده همون pinned بود، پاکش کن
+    if (misPinnedNoteIdRef.current === id) {
+      misPinnedNoteIdRef.current = null;
+      misPinnedNoteRef.current = null;
+    }
+
+    setNotes((prev) => {
+      const next = prev.filter((n) => n.id !== id);
+
+      // اگر همون نوت انتخاب شده حذف شد، انتخاب رو ببر روی اولین نوت باقی‌مونده
+      setSelectedId((cur) => {
+        if (cur !== id) return cur;
+        return next.length > 0 ? next[0].id : null;
+      });
+
+      return next;
+    });
+
+    // counts + pagination درست بشه
+    loadFolders();
+    loadNotes();
   }
 
   async function handleCreateNote() {
@@ -326,7 +354,12 @@ function HomePage() {
       </div>
 
       <div style={{ flex: 1, minWidth: 0, overflow: "auto" }}>
-        <NoteItem note={selectedNote} folders={folders} onUpdate={handleNoteUpdate} />
+        <NoteItem
+          note={selectedNote}
+          folders={folders}
+          onUpdate={handleNoteUpdate}
+          onDelete={handleNoteDelete}
+        />
       </div>
 
       <div style={{ width: aiWidth }}>

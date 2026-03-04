@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
 
 function MisRunsPage({ onOpenNote }) {
@@ -9,11 +9,14 @@ function MisRunsPage({ onOpenNote }) {
   const [offset, setOffset] = useState(0);
 
   const [symbol, setSymbol] = useState("");
-  const [sort, setSort] = useState("created_at"); // dt | created_at
-  const [order, setOrder] = useState("desc"); // asc | desc
+  const [sort, setSort] = useState("created_at");
+  const [order, setOrder] = useState("desc");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const [expandedRunId, setExpandedRunId] = useState(null);
+  const [showPayloadRunId, setShowPayloadRunId] = useState(null);
 
   const query = useMemo(() => {
     const p = new URLSearchParams();
@@ -43,11 +46,12 @@ function MisRunsPage({ onOpenNote }) {
         }
 
         const data = await res.json();
+
         if (!ignore) {
           setItems(Array.isArray(data?.items) ? data.items : []);
           setTotal(Number(data?.total || 0));
         }
-      } catch (e) {
+      } catch {
         if (!ignore) setError("Load failed (network/server).");
       } finally {
         if (!ignore) setLoading(false);
@@ -78,143 +82,181 @@ function MisRunsPage({ onOpenNote }) {
 
     const idStr = String(linkedNoteId);
 
-    // 1) store it
     localStorage.setItem("open_note_id", idStr);
 
-    // 2) ALSO emit an event so HomePage can react even if it doesn't remount
-    window.dispatchEvent(new CustomEvent("smartnotes:open-note", { detail: { noteId: Number(linkedNoteId) } }));
+    window.dispatchEvent(
+      new CustomEvent("smartnotes:open-note", {
+        detail: { noteId: Number(linkedNoteId) },
+      })
+    );
 
-    // 3) switch to home
     if (onOpenNote) onOpenNote();
   }
 
   return (
     <div style={{ padding: 16, maxWidth: 1100, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        <div>
-          <h2 style={{ marginTop: 0, marginBottom: 6 }}>MIS Runs</h2>
-          <div style={{ fontSize: 13, opacity: 0.75 }}>
-            Total: <strong>{total}</strong>
-          </div>
-        </div>
+      <h2 style={{ marginTop: 0 }}>MIS Runs</h2>
+
+      <div style={{ marginBottom: 8, fontSize: 13, opacity: 0.7 }}>
+        Total: <strong>{total}</strong>
       </div>
 
-      <div
-        style={{
-          marginTop: 12,
-          display: "flex",
-          gap: 10,
-          flexWrap: "wrap",
-          alignItems: "center",
-          padding: 12,
-          borderRadius: 12,
-          border: "1px solid rgba(255,255,255,0.10)",
-          background: "rgba(255,255,255,0.02)",
-        }}
-      >
-        <input
-          value={symbol}
-          onChange={(e) => {
-            setOffset(0);
-            setSymbol(e.target.value);
-          }}
-          placeholder="Filter by symbol (e.g. BTCUSDT)"
-          style={{ padding: "10px 12px", borderRadius: 10, minWidth: 240 }}
-        />
+      {loading && <div style={{ marginBottom: 10 }}>Loading…</div>}
+      {error && <div style={{ marginBottom: 10, color: "tomato" }}>{error}</div>}
 
-        <select
-          value={sort}
-          onChange={(e) => {
-            setOffset(0);
-            setSort(e.target.value);
-          }}
-          style={{ padding: "10px 12px", borderRadius: 10 }}
-        >
-          <option value="dt">sort: dt</option>
-          <option value="created_at">sort: created_at</option>
-        </select>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <thead style={{ background: "rgba(255,255,255,0.04)" }}>
+          <tr>
+            <th style={{ textAlign: "left", padding: 10 }}>dt</th>
+            <th style={{ textAlign: "left", padding: 10 }}>symbol</th>
+            <th style={{ textAlign: "left", padding: 10 }}>timeframe</th>
+            <th style={{ textAlign: "left", padding: 10 }}>run_id</th>
+            <th style={{ textAlign: "left", padding: 10 }}>status</th>
+            <th style={{ textAlign: "left", padding: 10 }}>linked_note</th>
+            <th style={{ textAlign: "left", padding: 10 }}>created_at</th>
+          </tr>
+        </thead>
 
-        <select
-          value={order}
-          onChange={(e) => {
-            setOffset(0);
-            setOrder(e.target.value);
-          }}
-          style={{ padding: "10px 12px", borderRadius: 10 }}
-        >
-          <option value="desc">order: desc</option>
-          <option value="asc">order: asc</option>
-        </select>
+        <tbody>
+          {items.map((r) => {
+            const linked = r.linked_note_id ?? null;
+            const canOpen = Boolean(linked);
 
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          <button onClick={goPrev} disabled={!canPrev}>
-            Prev
-          </button>
-          <button onClick={goNext} disabled={!canNext}>
-            Next
-          </button>
-        </div>
-      </div>
+            return (
+              <Fragment key={r.id}>
+                <tr
+                  style={{
+                    borderTop: "1px solid rgba(255,255,255,0.08)",
+                    cursor: "pointer",
+                  }}
+                  onClick={() =>
+                    setExpandedRunId((prev) => (prev === r.id ? null : r.id))
+                  }
+                >
+                  <td style={{ padding: 10 }}>{r.dt}</td>
+                  <td style={{ padding: 10 }}>{r.symbol}</td>
+                  <td style={{ padding: 10 }}>{r.timeframe}</td>
+                  <td style={{ padding: 10, fontFamily: "monospace" }}>{r.run_id}</td>
+                  <td style={{ padding: 10 }}>{r.pipeline_status}</td>
 
-      {loading ? <div style={{ marginTop: 12, opacity: 0.8 }}>Loading…</div> : null}
-      {error ? (
-        <div style={{ marginTop: 12, color: "tomato", whiteSpace: "pre-wrap" }}>
-          {error}
-        </div>
-      ) : null}
+                  <td style={{ padding: 10 }}>
+                    {canOpen ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenLinkedNote(linked);
+                        }}
+                        style={{ padding: "6px 10px", borderRadius: 10 }}
+                      >
+                        Open #{linked}
+                      </button>
+                    ) : (
+                      <span style={{ opacity: 0.6 }}>—</span>
+                    )}
+                  </td>
 
-      <div style={{ marginTop: 12, borderRadius: 12, overflow: "hidden", border: "1px solid rgba(255,255,255,0.10)" }}>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead style={{ background: "rgba(255,255,255,0.04)" }}>
-              <tr>
-                <th style={{ textAlign: "left", padding: 10 }}>dt</th>
-                <th style={{ textAlign: "left", padding: 10 }}>symbol</th>
-                <th style={{ textAlign: "left", padding: 10 }}>timeframe</th>
-                <th style={{ textAlign: "left", padding: 10 }}>run_id</th>
-                <th style={{ textAlign: "left", padding: 10 }}>status</th>
-                <th style={{ textAlign: "left", padding: 10 }}>linked_note</th>
-                <th style={{ textAlign: "left", padding: 10 }}>created_at</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((r) => {
-                const linked = r.linked_note_id ?? null;
-                const canOpen = Boolean(linked);
+                  <td style={{ padding: 10 }}>{r.created_at}</td>
+                </tr>
 
-                return (
-                  <tr key={r.id} style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                    <td style={{ padding: 10, whiteSpace: "nowrap" }}>{r.dt}</td>
-                    <td style={{ padding: 10, whiteSpace: "nowrap" }}>{r.symbol}</td>
-                    <td style={{ padding: 10, whiteSpace: "nowrap" }}>{r.timeframe}</td>
-                    <td style={{ padding: 10, fontFamily: "monospace" }}>{r.run_id}</td>
-                    <td style={{ padding: 10, whiteSpace: "nowrap" }}>{r.pipeline_status}</td>
+                {expandedRunId === r.id && (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      style={{
+                        padding: 14,
+                        background: "rgba(255,255,255,0.03)",
+                        borderTop: "1px solid rgba(255,255,255,0.08)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontFamily: "monospace",
+                          fontSize: 12,
+                          marginBottom: 10,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 3,
+                        }}
+                      >
+                        {r.manifest_path && (
+                          <div>
+                            <span style={{ opacity: 0.6 }}>manifest_path: </span>
+                            {r.manifest_path}
+                          </div>
+                        )}
 
-                    <td style={{ padding: 10, whiteSpace: "nowrap" }}>
-                      {canOpen ? (
-                        <button onClick={() => handleOpenLinkedNote(linked)} style={{ padding: "6px 10px", borderRadius: 10 }}>
-                          Open #{linked}
-                        </button>
-                      ) : (
-                        <span style={{ opacity: 0.6 }}>—</span>
+                        {r.market_flag && (
+                          <div>
+                            <span style={{ opacity: 0.6 }}>market_flag: </span>
+                            {r.market_flag}
+                          </div>
+                        )}
+
+                        {r.risk_mode && (
+                          <div>
+                            <span style={{ opacity: 0.6 }}>risk_mode: </span>
+                            {r.risk_mode}
+                          </div>
+                        )}
+
+                        {r.pipeline_metadata && (
+                          <div>
+                            <span style={{ opacity: 0.6 }}>pipeline_metadata: </span>
+                            {JSON.stringify(r.pipeline_metadata)}
+                          </div>
+                        )}
+
+                        <div>
+                          <span style={{ opacity: 0.6 }}>raw_payload: </span>
+
+                          <button
+                            style={{ marginLeft: 8 }}
+                            onClick={() =>
+                              setShowPayloadRunId((prev) =>
+                                prev === r.id ? null : r.id
+                              )
+                            }
+                          >
+                            {showPayloadRunId === r.id
+                              ? "Hide JSON"
+                              : "Show JSON"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {showPayloadRunId === r.id && (
+                        <pre
+                          style={{
+                            margin: 0,
+                            fontSize: 12,
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-all",
+                          }}
+                        >
+                          {JSON.stringify(r, null, 2)}
+                        </pre>
                       )}
                     </td>
-
-                    <td style={{ padding: 10, whiteSpace: "nowrap" }}>{r.created_at}</td>
                   </tr>
-                );
-              })}
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
 
-              {!loading && !error && items.length === 0 ? (
-                <tr>
-                  <td colSpan={7} style={{ padding: 14, opacity: 0.75 }}>
-                    No runs found.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
+      <div style={{ marginTop: 14 }}>
+        <button onClick={goPrev} disabled={!canPrev}>
+          Prev
+        </button>
+
+        <button
+          onClick={goNext}
+          disabled={!canNext}
+          style={{ marginLeft: 10 }}
+        >
+          Next
+        </button>
       </div>
     </div>
   );
