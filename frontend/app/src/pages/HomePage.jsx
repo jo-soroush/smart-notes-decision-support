@@ -272,6 +272,13 @@ function HomePage() {
 
   const selectedNote = notes.find((n) => n.id === selectedId) ?? null;
 
+  const isMisLinked =
+    !!selectedNote &&
+    (selectedNote.type === "external_mis" ||
+      selectedNote.type === "mis_run" ||
+      selectedNote.source_system === "MIS" ||
+      !!selectedNote.external_run_id);
+
   return (
     <div ref={rootRef} style={{ height: "100%", display: "flex", minHeight: 0 }}>
       <div style={{ width: 320, padding: 12, overflow: "auto" }}>
@@ -349,7 +356,7 @@ function HomePage() {
       </div>
 
       <div style={{ width: aiWidth }}>
-        <AiPanel noteId={selectedId} note={selectedNote} />
+        <AiPanel noteId={selectedId} isMisLinked={isMisLinked} />
       </div>
     </div>
   );

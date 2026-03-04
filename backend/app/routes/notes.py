@@ -94,6 +94,12 @@ def create_note(
         status=note.status,
         folder_id=note.folder_id,
         user_id=current_user.id,
+
+        # MIS / integration fields
+        type=note.type,
+        source_system=note.source_system,
+        external_run_id=note.external_run_id,
+        note_metadata=note.note_metadata,
     )
 
     db.add(db_note)
@@ -131,6 +137,12 @@ def update_note(
     db_note.content = updated_note.content
     db_note.status = updated_note.status
     db_note.folder_id = updated_note.folder_id
+
+    # MIS / integration fields
+    db_note.type = updated_note.type
+    db_note.source_system = updated_note.source_system
+    db_note.external_run_id = updated_note.external_run_id
+    db_note.note_metadata = updated_note.note_metadata
 
     try:
         db.commit()

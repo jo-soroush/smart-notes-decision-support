@@ -5,6 +5,10 @@ function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
+async function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 function AiPanel({ noteId, isMisLinked = false }) {
   const [summary, setSummary] = useState(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
@@ -70,7 +74,6 @@ function AiPanel({ noteId, isMisLinked = false }) {
       setMisAnalysis(null);
       setMisAnalysisError(null);
       setLoadingMisAnalysis(false);
-
       return;
     }
 
@@ -86,7 +89,6 @@ function AiPanel({ noteId, isMisLinked = false }) {
         const token = localStorage.getItem("token");
         const res = await apiFetch(`/ai/results/latest?${params.toString()}`, { token });
 
-        // 404 is normal (no summary yet) => silent
         if (res.status === 404) {
           if (!ignore) {
             setSummary(null);
@@ -112,9 +114,6 @@ function AiPanel({ noteId, isMisLinked = false }) {
     }
 
     async function loadMisAnalysisFromDB() {
-      // IMPORTANT:
-      // Always try to load cached MIS analysis from DB.
-      // (Even if UI thinks the note isn't MIS-linked, we still want to show saved results.)
       try {
         const params = new URLSearchParams({
           note_id: String(noteId),
@@ -124,7 +123,6 @@ function AiPanel({ noteId, isMisLinked = false }) {
         const token = localStorage.getItem("token");
         const res = await apiFetch(`/ai/results/latest?${params.toString()}`, { token });
 
-        // 404 is normal (no analysis yet) => silent
         if (res.status === 404) {
           if (!ignore) {
             setMisAnalysis(null);
@@ -157,16 +155,51 @@ function AiPanel({ noteId, isMisLinked = false }) {
     };
   }, [noteId]);
 
+  async function pollJobUntilDone(jobId, { onDone, onError, isStillValid }) {
+    const token = localStorage.getItem("token");
+
+    // poll up to ~20s (40 * 500ms)
+    for (let i = 0; i < 40; i++) {
+      if (!isStillValid()) return;
+
+      const res = await apiFetch(`/ai/jobs/${jobId}`, { token });
+      if (!res.ok) {
+        const text = await res.text();
+        onError(text || `Job status failed (${res.status})`);
+        return;
+      }
+
+      const data = await res.json();
+      if (!isStillValid()) return;
+
+      if (data.status === "done") {
+        onDone(data);
+        return;
+      }
+
+      if (data.status === "failed") {
+        onError(data.error || "Job failed");
+        return;
+      }
+
+      await sleep(500);
+    }
+
+    onError("Job timed out (waited too long).");
+  }
+
   async function handleGenerateSummary() {
     if (!noteId) return;
-    if (summary) return; // already exists => avoid extra cost
+    if (summary) return;
 
     setLoadingSummary(true);
     setSummaryError(null);
 
+    const token = localStorage.getItem("token");
+    const activeNoteId = noteId;
+
     try {
-      const token = localStorage.getItem("token");
-      const res = await apiFetch("/ai/jobs", {
+      const res = await apiFetch("/ai/jobs/queue", {
         method: "POST",
         token,
         headers: { "Content-Type": "application/json" },
@@ -178,13 +211,21 @@ function AiPanel({ noteId, isMisLinked = false }) {
 
       if (!res.ok) {
         const text = await res.text();
-        setSummaryError(text || `AI summary failed (${res.status})`);
+        setSummaryError(text || `Queue summary failed (${res.status})`);
         return;
       }
 
-      const data = await res.json();
-      setSummary(data?.result_text ?? null);
-      setSummaryError(null);
+      const queued = await res.json();
+      const jobId = queued.job_id;
+
+      await pollJobUntilDone(jobId, {
+        isStillValid: () => activeNoteId === noteId,
+        onDone: (job) => {
+          setSummary(job.result_text ?? null);
+          setSummaryError(null);
+        },
+        onError: (msg) => setSummaryError(msg),
+      });
     } catch (err) {
       setSummaryError("Failed to generate summary (network/server).");
     } finally {
@@ -194,17 +235,17 @@ function AiPanel({ noteId, isMisLinked = false }) {
 
   async function handleGenerateMisAnalysis() {
     if (!noteId) return;
-    // IMPORTANT:
-    // Generate MIS analysis ONLY if note is MIS-linked.
     if (!isMisLinked) return;
-    if (misAnalysis) return; // already exists => avoid extra cost
+    if (misAnalysis) return;
 
     setLoadingMisAnalysis(true);
     setMisAnalysisError(null);
 
+    const token = localStorage.getItem("token");
+    const activeNoteId = noteId;
+
     try {
-      const token = localStorage.getItem("token");
-      const res = await apiFetch("/ai/jobs", {
+      const res = await apiFetch("/ai/jobs/queue", {
         method: "POST",
         token,
         headers: { "Content-Type": "application/json" },
@@ -216,13 +257,21 @@ function AiPanel({ noteId, isMisLinked = false }) {
 
       if (!res.ok) {
         const text = await res.text();
-        setMisAnalysisError(text || `MIS analysis failed (${res.status})`);
+        setMisAnalysisError(text || `Queue MIS analysis failed (${res.status})`);
         return;
       }
 
-      const data = await res.json();
-      setMisAnalysis(data?.result_text ?? null);
-      setMisAnalysisError(null);
+      const queued = await res.json();
+      const jobId = queued.job_id;
+
+      await pollJobUntilDone(jobId, {
+        isStillValid: () => activeNoteId === noteId,
+        onDone: (job) => {
+          setMisAnalysis(job.result_text ?? null);
+          setMisAnalysisError(null);
+        },
+        onError: (msg) => setMisAnalysisError(msg),
+      });
     } catch (err) {
       setMisAnalysisError("Failed to generate MIS analysis (network/server).");
     } finally {
@@ -234,8 +283,6 @@ function AiPanel({ noteId, isMisLinked = false }) {
   const disableGenerateSummary = !noteId || loadingSummary || hasSummary;
 
   const hasMisAnalysis = !!misAnalysis;
-  // IMPORTANT:
-  // Disable generate unless MIS-linked; BUT still show cached analysis if it exists.
   const disableGenerateMisAnalysis = !noteId || !isMisLinked || loadingMisAnalysis || hasMisAnalysis;
 
   return (
