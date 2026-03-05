@@ -3,6 +3,7 @@ from pathlib import Path
 
 from app.core.logging import logger
 from app.integrations.mis.routes import router as mis_router
+from app.routes.activity_logs import router as activity_logs_router
 from app.routes.ai import router as ai_router
 from app.routes.auth import router as auth_router
 from app.routes.folders import router as folders_router
@@ -42,6 +43,7 @@ app.include_router(ai_router)
 app.include_router(folders_router)
 app.include_router(auth_router)
 app.include_router(mis_router)
+app.include_router(activity_logs_router)
 
 
 @app.get("/health", response_model=dict)

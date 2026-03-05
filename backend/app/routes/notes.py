@@ -1,14 +1,16 @@
-import math
 
 from app.core.deps import get_current_user
 from app.db import get_db
-from app.models.folder import FolderModel
-from app.models.note import NoteModel
 from app.models.user import UserModel
 from app.schemas.note import Note, NoteCreate, NotesPage
+from app.services.notes_service import (
+    create_note_service,
+    delete_note_service,
+    get_note_by_id,
+    list_notes,
+    update_note_service,
+)
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 router = APIRouter(
@@ -29,39 +31,15 @@ def get_notes(
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=10, ge=1, le=100),
 ):
-    query = db.query(NoteModel).filter(NoteModel.user_id == current_user.id)
-
-    if exclude_type:
-        query = query.filter(or_(NoteModel.type.is_(None), NoteModel.type != exclude_type))
-
-    if status:
-        query = query.filter(NoteModel.status == status)
-
-    if folder_id is not None:
-        query = query.filter(NoteModel.folder_id == folder_id)
-
-    if search:
-        like = f"%{search}%"
-        query = query.filter(
-            or_(
-                NoteModel.title.ilike(like),
-                NoteModel.content.ilike(like),
-            )
-        )
-
-    total = query.count()
-    offset = (page - 1) * limit
-
-    items = query.order_by(NoteModel.id.desc()).offset(offset).limit(limit).all()
-
-    pages = math.ceil(total / limit) if total > 0 else 0
-
-    return NotesPage(
-        items=items,
-        total=total,
+    return list_notes(
+        db=db,
+        user_id=current_user.id,
+        search=search,
+        status=status,
+        folder_id=folder_id,
+        exclude_type=exclude_type,
         page=page,
         limit=limit,
-        pages=pages,
     )
 
 
@@ -71,13 +49,15 @@ def get_note(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_user),
 ):
-    db_note = (
-        db.query(NoteModel)
-        .filter(NoteModel.id == note_id, NoteModel.user_id == current_user.id)
-        .first()
+    db_note = get_note_by_id(
+        db=db,
+        user_id=current_user.id,
+        note_id=note_id,
     )
+
     if db_note is None:
         raise HTTPException(status_code=404, detail="Note not found")
+
     return db_note
 
 
@@ -87,34 +67,14 @@ def create_note(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_user),
 ):
-    if note.folder_id is not None:
-        exists = db.query(FolderModel.id).filter(FolderModel.id == note.folder_id).first()
-        if exists is None:
-            raise HTTPException(status_code=422, detail="Invalid folder_id (folder not found)")
-
-    db_note = NoteModel(
-        title=note.title,
-        content=note.content,
-        status=note.status,
-        folder_id=note.folder_id,
-        user_id=current_user.id,
-
-        # MIS / integration fields
-        type=note.type,
-        source_system=note.source_system,
-        external_run_id=note.external_run_id,
-        note_metadata=note.note_metadata,
-    )
-
-    db.add(db_note)
     try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(status_code=422, detail="Invalid folder_id (foreign key constraint)")
-
-    db.refresh(db_note)
-    return db_note
+        return create_note_service(
+            db=db,
+            user_id=current_user.id,
+            note=note,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.put("/{note_id}", response_model=Note)
@@ -124,38 +84,17 @@ def update_note(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_user),
 ):
-    db_note = (
-        db.query(NoteModel)
-        .filter(NoteModel.id == note_id, NoteModel.user_id == current_user.id)
-        .first()
-    )
-    if db_note is None:
-        raise HTTPException(status_code=404, detail="Note not found")
-
-    if updated_note.folder_id is not None:
-        exists = db.query(FolderModel.id).filter(FolderModel.id == updated_note.folder_id).first()
-        if exists is None:
-            raise HTTPException(status_code=422, detail="Invalid folder_id (folder not found)")
-
-    db_note.title = updated_note.title
-    db_note.content = updated_note.content
-    db_note.status = updated_note.status
-    db_note.folder_id = updated_note.folder_id
-
-    # MIS / integration fields
-    db_note.type = updated_note.type
-    db_note.source_system = updated_note.source_system
-    db_note.external_run_id = updated_note.external_run_id
-    db_note.note_metadata = updated_note.note_metadata
-
     try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(status_code=422, detail="Invalid folder_id (foreign key constraint)")
-
-    db.refresh(db_note)
-    return db_note
+        return update_note_service(
+            db=db,
+            user_id=current_user.id,
+            note_id=note_id,
+            updated_note=updated_note,
+        )
+    except ValueError as e:
+        if str(e) == "Note not found":
+            raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.delete("/{note_id}")
@@ -164,14 +103,12 @@ def delete_note(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_user),
 ):
-    db_note = (
-        db.query(NoteModel)
-        .filter(NoteModel.id == note_id, NoteModel.user_id == current_user.id)
-        .first()
-    )
-    if db_note is None:
+    try:
+        delete_note_service(
+            db=db,
+            user_id=current_user.id,
+            note_id=note_id,
+        )
+        return {"deleted": note_id}
+    except ValueError:
         raise HTTPException(status_code=404, detail="Note not found")
-
-    db.delete(db_note)
-    db.commit()
-    return {"deleted": note_id}
