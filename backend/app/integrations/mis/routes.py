@@ -3,6 +3,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from app.core.deps import get_current_user
+from app.core.logging import logger
 from app.db import SessionLocal
 from app.integrations.mis.models import ExternalRun
 from app.models.note import NoteModel
@@ -122,6 +123,18 @@ def mis_ingest(
 
         db.commit()
         db.refresh(record)
+
+        logger.info(
+    "MIS ingested: source_system=%s run_id=%s symbol=%s timeframe=%s dt=%s pipeline_status=%s external_run_id=%s linked_note_id=%s",
+    body.source_system,
+    run_id,
+    symbol,
+    timeframe,
+    parsed_dt.isoformat(),
+    pipeline_status,
+    str(record.id),
+    note.id if note.id else None,
+)
 
         return {"status": "ingested", "external_run_id": str(record.id), "run_id": run_id}
     except Exception:

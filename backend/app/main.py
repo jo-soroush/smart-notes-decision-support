@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+from app.core.logging import logger
 from app.integrations.mis.routes import router as mis_router
 from app.routes.ai import router as ai_router
 from app.routes.auth import router as auth_router
@@ -22,6 +23,7 @@ if not os.getenv("GEMINI_API_KEY"):
 
 
 app = FastAPI(title="Smart Notes API", version="0.1.0")
+logger.info("Smart Notes API starting...")
 
 app.add_middleware(
     CORSMiddleware,
