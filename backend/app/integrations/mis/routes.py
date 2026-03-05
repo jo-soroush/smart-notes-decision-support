@@ -8,6 +8,7 @@ from app.db import SessionLocal
 from app.integrations.mis.models import ExternalRun
 from app.models.note import NoteModel
 from app.models.user import UserModel
+from app.services.activity_log_service import log_activity
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import and_, desc
@@ -125,16 +126,34 @@ def mis_ingest(
         db.refresh(record)
 
         logger.info(
-    "MIS ingested: source_system=%s run_id=%s symbol=%s timeframe=%s dt=%s pipeline_status=%s external_run_id=%s linked_note_id=%s",
-    body.source_system,
-    run_id,
-    symbol,
-    timeframe,
-    parsed_dt.isoformat(),
-    pipeline_status,
-    str(record.id),
-    note.id if note.id else None,
-)
+            "MIS ingested: source_system=%s run_id=%s symbol=%s timeframe=%s dt=%s pipeline_status=%s external_run_id=%s linked_note_id=%s",
+            body.source_system,
+            run_id,
+            symbol,
+            timeframe,
+            parsed_dt.isoformat(),
+            pipeline_status,
+            str(record.id),
+            note.id if note.id else None,
+        )
+
+        log_activity(
+            db=db,
+            user_id=current_user.id,
+            event_type="mis_ingested",
+            entity_type="note",
+            entity_id=note.id,
+            event_metadata={
+                "source_system": body.source_system,
+                "run_id": run_id,
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "dt": parsed_dt.isoformat(),
+                "pipeline_status": pipeline_status,
+                "external_run_id": str(record.id),
+                "linked_note_id": note.id,
+            },
+        )
 
         return {"status": "ingested", "external_run_id": str(record.id), "run_id": run_id}
     except Exception:
