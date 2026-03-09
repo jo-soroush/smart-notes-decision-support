@@ -8,6 +8,7 @@ from app.jobs.ai_jobs import ai_job_queue
 from app.models.ai_result import AiResult
 from app.models.note import NoteModel
 from app.schemas.ai import AiJobCreate, AiJobResponse
+from app.services.activity_log_service import log_activity
 from app.services.ai_service import (
     build_input_text,
     compute_content_hash,
@@ -47,6 +48,20 @@ def _process_ai_job(job_id: str, job: AiJobCreate, db_session_factory) -> None:
 
             cached = get_cached_result(db, job.note_id, job.action_type, content_hash)
             if cached:
+                log_activity(
+                    db=db,
+                    user_id=note.user_id,
+                    event_type="ai_executed",
+                    entity_type="note",
+                    entity_id=note.id,
+                    event_metadata={
+                        "action_type": job.action_type,
+                        "cached": True,
+                        "model_name": cached.model_name,
+                    },
+                )
+                db.commit()
+
                 ai_job_queue.set_done(
                     job_id,
                     cached=True,
@@ -86,6 +101,20 @@ def _process_ai_job(job_id: str, job: AiJobCreate, db_session_factory) -> None:
                 model_name=model_name,
             )
 
+            log_activity(
+                db=db,
+                user_id=note.user_id,
+                event_type="ai_executed",
+                entity_type="note",
+                entity_id=note.id,
+                event_metadata={
+                    "action_type": job.action_type,
+                    "cached": False,
+                    "model_name": saved.model_name,
+                },
+            )
+            db.commit()
+
             ai_job_queue.set_done(
                 job_id,
                 cached=False,
@@ -110,6 +139,20 @@ def run_ai_job(job: AiJobCreate, db: Session = Depends(get_db)):
 
     cached = get_cached_result(db, job.note_id, job.action_type, content_hash)
     if cached:
+        log_activity(
+            db=db,
+            user_id=note.user_id,
+            event_type="ai_executed",
+            entity_type="note",
+            entity_id=note.id,
+            event_metadata={
+                "action_type": job.action_type,
+                "cached": True,
+                "model_name": cached.model_name,
+            },
+        )
+        db.commit()
+
         return AiJobResponse(
             note_id=job.note_id,
             action_type=job.action_type,
@@ -147,6 +190,20 @@ def run_ai_job(job: AiJobCreate, db: Session = Depends(get_db)):
         result_text=result_text,
         model_name=model_name,
     )
+
+    log_activity(
+        db=db,
+        user_id=note.user_id,
+        event_type="ai_executed",
+        entity_type="note",
+        entity_id=note.id,
+        event_metadata={
+            "action_type": job.action_type,
+            "cached": False,
+            "model_name": saved.model_name,
+        },
+    )
+    db.commit()
 
     return AiJobResponse(
         note_id=job.note_id,

@@ -3,6 +3,7 @@ import math
 from app.models.folder import FolderModel
 from app.models.note import NoteModel
 from app.schemas.note import NoteCreate, NotesPage
+from app.services.activity_log_service import log_activity
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -91,6 +92,20 @@ def create_note_service(
     )
 
     db.add(db_note)
+    db.flush()
+
+    log_activity(
+        db=db,
+        user_id=user_id,
+        event_type="note_created",
+        entity_type="note",
+        entity_id=db_note.id,
+        event_metadata={
+            "title": db_note.title,
+            "status": db_note.status,
+            "folder_id": db_note.folder_id,
+        },
+    )
 
     try:
         db.commit()
@@ -133,6 +148,19 @@ def update_note_service(
     db_note.external_run_id = updated_note.external_run_id
     db_note.note_metadata = updated_note.note_metadata
 
+    log_activity(
+        db=db,
+        user_id=user_id,
+        event_type="note_updated",
+        entity_type="note",
+        entity_id=db_note.id,
+        event_metadata={
+            "title": db_note.title,
+            "status": db_note.status,
+            "folder_id": db_note.folder_id,
+        },
+    )
+
     try:
         db.commit()
     except IntegrityError:
@@ -159,5 +187,24 @@ def delete_note_service(
     if db_note is None:
         raise ValueError("Note not found")
 
+    deleted_note_id = db_note.id
+    deleted_title = db_note.title
+    deleted_status = db_note.status
+    deleted_folder_id = db_note.folder_id
+
     db.delete(db_note)
+
+    log_activity(
+        db=db,
+        user_id=user_id,
+        event_type="note_deleted",
+        entity_type="note",
+        entity_id=deleted_note_id,
+        event_metadata={
+            "title": deleted_title,
+            "status": deleted_status,
+            "folder_id": deleted_folder_id,
+        },
+    )
+
     db.commit()

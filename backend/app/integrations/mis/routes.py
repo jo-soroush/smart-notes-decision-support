@@ -10,7 +10,7 @@ from app.models.note import NoteModel
 from app.models.user import UserModel
 from app.services.activity_log_service import log_activity
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import and_, desc
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,8 @@ class MISIngestRequest(BaseModel):
 
 
 class ExternalRunOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     user_id: int
     linked_note_id: Optional[int] = None
@@ -39,9 +41,6 @@ class ExternalRunOut(BaseModel):
     manifest_path: str
     raw_payload: dict
     created_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
 
 
 class ExternalRunListResponse(BaseModel):
@@ -108,7 +107,7 @@ def mis_ingest(
             raw_payload=body.run_manifest,
         )
         db.add(record)
-        db.flush()  # ✅ IMPORTANT: ensure record.id exists before using it in Note
+        db.flush()
 
         note = NoteModel(
             title=f"MIS Run {run_id}",

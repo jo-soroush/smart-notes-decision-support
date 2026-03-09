@@ -21,4 +21,4 @@ def log_activity(
     )
 
     db.add(activity)
-    db.commit()
+   
