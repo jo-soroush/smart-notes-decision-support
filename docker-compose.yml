@@ -1,0 +1,26 @@
+services:
+  db:
+    image: postgres:16
+    container_name: smart-notes-db
+    environment:
+      POSTGRES_DB: smart_notes
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 2020
+    ports:
+      - "5432:5432"
+    volumes:
+      - smart_notes_db_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+    container_name: smart-notes-backend
+    env_file:
+      - ./backend/.env.docker
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+volumes:
+  smart_notes_db_data:
