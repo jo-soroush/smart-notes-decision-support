@@ -22,5 +22,16 @@ services:
     depends_on:
       - db
 
+  frontend:
+    build:
+      context: ./frontend/app
+    container_name: smart-notes-frontend
+    environment:
+      VITE_API_BASE: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
 volumes:
   smart_notes_db_data:
