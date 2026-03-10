@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class FolderBase(BaseModel):
@@ -10,12 +10,10 @@ class FolderCreate(FolderBase):
 
 
 class Folder(FolderBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
 
-    class Config:
-        from_attributes = True
 
-
-# ✅ NEW
 class FolderWithCount(Folder):
     note_count: int

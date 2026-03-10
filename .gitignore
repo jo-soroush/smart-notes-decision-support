@@ -4,3 +4,5 @@ __pycache__/
 
 .env
 backend/.env
+.vscode/
+backend/.env.docker

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiFetch } from "../lib/api";
 
 function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
   const [title, setTitle] = useState(note?.title ?? "");
@@ -13,17 +14,12 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
     setFolderId(note?.folder_id ? String(note.folder_id) : "");
   }, [note?.id]);
 
-  function getAuthHeaders(extra = {}) {
-    const token = localStorage.getItem("token");
-    return {
-      ...extra,
-      Authorization: `Bearer ${token}`,
-    };
-  }
-
   if (!note) {
     return <div style={{ padding: 24, opacity: 0.75 }}>Select a note…</div>;
   }
+
+  const hasMisLink = Boolean(note?.external_run_id) || Boolean(note?.source_system);
+  const shortExternalRunId = note?.external_run_id ? String(note.external_run_id).slice(0, 8) : null;
 
   async function handleSave() {
     const payload = {
@@ -34,9 +30,11 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
     };
 
     try {
-      const res = await fetch(`http://127.0.0.1:8000/notes/${note.id}`, {
+      const token = localStorage.getItem("token");
+      const res = await apiFetch(`/notes/${note.id}`, {
         method: "PUT",
-        headers: getAuthHeaders({ "Content-Type": "application/json" }),
+        token,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
@@ -46,7 +44,11 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
       }
 
       const updated = await res.json();
+
+      // ✅ update HomePage immediately
       if (onUpdate) onUpdate(updated);
+
+      // optional (kept for compatibility if used elsewhere)
       if (onRefresh) onRefresh();
     } catch (err) {
       console.error("Failed to update note:", err);
@@ -58,9 +60,10 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
     if (!ok) return;
 
     try {
-      const res = await fetch(`http://127.0.0.1:8000/notes/${note.id}`, {
+      const token = localStorage.getItem("token");
+      const res = await apiFetch(`/notes/${note.id}`, {
         method: "DELETE",
-        headers: getAuthHeaders(),
+        token,
       });
 
       if (!res.ok) {
@@ -68,8 +71,11 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
         return;
       }
 
+      // ✅ notify HomePage to remove it from state immediately
       if (onDelete) onDelete(note.id);
-      if (onRefresh) onRefresh();
+
+      // ❌ do NOT force refresh; HomePage state is the source of truth now
+      // if (onRefresh) onRefresh();
     } catch (err) {
       console.error("Failed to delete note:", err);
     }
@@ -77,6 +83,35 @@ function NoteItem({ note, folders = [], onDelete, onUpdate, onRefresh }) {
 
   return (
     <div style={{ padding: 24, minHeight: 0 }}>
+      {hasMisLink ? (
+        <div style={{ marginBottom: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "6px 10px",
+              borderRadius: 999,
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: 0.2,
+              border: "1px solid rgba(255,255,255,0.14)",
+              background: "rgba(255,255,255,0.04)",
+            }}
+            title={
+              note?.external_run_id
+                ? `external_run_id: ${String(note.external_run_id)}`
+                : note?.source_system
+                  ? `source_system: ${String(note.source_system)}`
+                  : ""
+            }
+          >
+            {String(note?.source_system || "MIS").toUpperCase()} LINKED
+            {shortExternalRunId ? <span style={{ opacity: 0.75 }}>• {shortExternalRunId}</span> : null}
+          </span>
+        </div>
+      ) : null}
+
       <input
         value={title}
         onChange={(e) => setTitle(e.target.value)}

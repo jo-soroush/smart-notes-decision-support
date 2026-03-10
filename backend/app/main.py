@@ -1,8 +1,11 @@
 import os
 from pathlib import Path
 
-from app.routes.auth import router as auth_router
+from app.core.logging import logger
+from app.integrations.mis.routes import router as mis_router
+from app.routes.activity_logs import router as activity_logs_router
 from app.routes.ai import router as ai_router
+from app.routes.auth import router as auth_router
 from app.routes.folders import router as folders_router
 from app.routes.notes import router as notes_router
 from dotenv import load_dotenv
@@ -21,6 +24,7 @@ if not os.getenv("GEMINI_API_KEY"):
 
 
 app = FastAPI(title="Smart Notes API", version="0.1.0")
+logger.info("Smart Notes API starting...")
 
 app.add_middleware(
     CORSMiddleware,
@@ -38,6 +42,8 @@ app.include_router(notes_router)
 app.include_router(ai_router)
 app.include_router(folders_router)
 app.include_router(auth_router)
+app.include_router(mis_router)
+app.include_router(activity_logs_router)
 
 
 @app.get("/health", response_model=dict)

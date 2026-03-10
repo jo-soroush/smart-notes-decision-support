@@ -3,7 +3,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
-ActionType = Literal["summary", "key_points"]
+ActionType = Literal["summary", "key_points", "mis_analysis"]
 
 
 class AiJobCreate(BaseModel):
